@@ -2043,6 +2043,12 @@ android.app.Notification.setLatestEventInfo    API 19 有 → API 37 无（API 2
 简单说：可以自由使用、修改、再发布、商用，但必须保留版权声明和许可声明，
 且本软件按「按原样」提供、不附带任何担保。
 
+### 参与贡献
+
+想改代码请先看 [CONTRIBUTING.md](CONTRIBUTING.md) —— 里面写了构建/测试方式，
+以及几条踩坑得来的硬约束（`.ps1` 必须带 BOM、权限判定只能有一个出处、
+样本 APK 与密钥不得入库等）。
+
 ### 关于第三方内容
 
 - 本仓库**只包含本项目自己的源码**，没有任何第三方库依赖（只用 Android SDK 原生 API）。

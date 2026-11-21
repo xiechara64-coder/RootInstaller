@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用与排错文档
+    url: https://github.com/xiechara64-coder/RootInstaller/blob/main/README.md
+    about: 构建失败、安装报错、权限显示看不懂 —— 先看 README 的「排错」和「已知限制」
+  - name: 下载最新版本
+    url: https://github.com/xiechara64-coder/RootInstaller/releases
+    about: 发布包在 Releases 页面，带正式签名

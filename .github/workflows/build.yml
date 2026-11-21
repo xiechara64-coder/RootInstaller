@@ -25,10 +25,20 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
+      # upload-artifact v7 去掉了 if-no-files-found 输入，缺文件时的行为就不可控了。
+      # 所以先把这个三个日志文件建出来（空文件即可），后面的上传步骤总能找到东西。
+      - name: Prepare log files
+        shell: pwsh
+        run: |
+          foreach ($n in 'build', 'samples', 'tests') {
+            $p = Join-Path $env:RUNNER_TEMP "$n.log"
+            if (-not (Test-Path $p)) { New-Item -ItemType File -Path $p -Force | Out-Null }
+          }
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -72,12 +82,10 @@ jobs:
 
       - name: Upload build log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-log
           path: ${{ runner.temp }}/build.log
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: Generate signature test samples
         shell: pwsh
@@ -96,12 +104,10 @@ jobs:
 
       - name: Upload samples log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: samples-log
           path: ${{ runner.temp }}/samples.log
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: Run offline tests
         shell: pwsh
@@ -119,17 +125,13 @@ jobs:
 
       - name: Upload tests log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tests-log
           path: ${{ runner.temp }}/tests.log
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: RootInstaller-debug
           path: RootInstaller.apk
-          if-no-files-found: error
-          retention-days: 14

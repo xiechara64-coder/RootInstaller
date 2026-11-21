@@ -1,0 +1,43 @@
+name: 功能建议
+description: 想加什么能力，或者现有行为想怎么改
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提之前建议先看 README 的「想继续改进的方向」一节 —— 那里列了几个已经考虑过、
+        但因为代价或收益暂时没做的点。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题
+      description: 先说场景，再说什么功能。避免只写「加个 XXX」。
+      placeholder: 我经常要连续装好几个包，现在每次都要退回列表……
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望它怎么工作
+      description: 界面上怎么操作、显示成什么样
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 有没有别的办法（可选）
+      description: 现有功能能不能凑合实现？为什么不够用？
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我理解这个应用要兼容 Android 4.3（API 18），新特性不能依赖更新的系统 API
+          required: true
