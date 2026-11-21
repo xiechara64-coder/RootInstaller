@@ -1,0 +1,57 @@
+# 复合 Action：定位 runner 上预装的 Android SDK，并装好本项目需要的两样东西。
+#
+# 为什么需要它：windows-latest 镜像自带 Android SDK，但**不一定带 android-19**
+# （本项目用 android-19 的 android.jar 编译，因为它包含 4.3 的全部公开 API、
+#  又不会引入 API 21+ 的新类）。build-tools 的版本也随镜像变化，
+# 所以这里显式指定一个，避免哪天镜像升级后构建行为悄悄变了。
+name: setup-android-sdk
+description: 安装构建所需的 platforms;android-19 与指定版本的 build-tools
+
+inputs:
+  platform:
+    description: Android API 级别（本项目用 19）
+    required: false
+    default: '19'
+  build-tools:
+    description: build-tools 版本
+    required: false
+    default: '34.0.0'
+
+runs:
+  using: composite
+  steps:
+    - name: Locate SDK and install packages
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+
+        $sdk = $env:ANDROID_HOME
+        if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
+        if (-not $sdk) { $sdk = 'C:\Android\android-sdk' }
+        if (-not (Test-Path $sdk)) {
+          throw "找不到 Android SDK（ANDROID_HOME=$env:ANDROID_HOME，ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT）"
+        }
+        Write-Host "Android SDK: $sdk"
+
+        $mgr = Get-ChildItem -Path (Join-Path $sdk 'cmdline-tools') -Recurse -Filter sdkmanager.bat -ErrorAction SilentlyContinue |
+               Select-Object -First 1
+        if (-not $mgr) { throw "找不到 sdkmanager.bat（cmdline-tools 未安装？）" }
+        Write-Host "sdkmanager: $($mgr.FullName)"
+
+        $packages = @(
+          "platforms;android-${{ inputs.platform }}",
+          "build-tools;${{ inputs.build-tools }}"
+        )
+
+        # 先直接装：镜像上许可通常早已接受，这样就不会去碰 --licenses
+        # （那个命令会等 stdin 输入，处理不当会让作业一直挂到超时）。
+        & $mgr.FullName --sdk_root="$sdk" @packages
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "直接安装失败（可能许可未接受），补一次 --licenses 后重试…"
+          $answers = (1..100 | ForEach-Object { 'y' }) -join "`n"
+          $answers | & $mgr.FullName --sdk_root="$sdk" --licenses 2>&1 | Out-Null
+          & $mgr.FullName --sdk_root="$sdk" @packages
+          if ($LASTEXITCODE -ne 0) { throw "sdkmanager 安装失败（退出码 $LASTEXITCODE）" }
+        }
+
+        Write-Host "已安装: platforms;android-${{ inputs.platform }}, build-tools;${{ inputs.build-tools }}"

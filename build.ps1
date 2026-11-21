@@ -4,16 +4,33 @@
 # 而要正确处理 Android 4.3 的目标清单，用 aapt + javac + d8 这条经典链路最稳。
 #
 # 用法：
-#   .\build.ps1                                  # 自动找 SDK
+#   .\build.ps1                                  # 自动找 SDK，用 debug.keystore 签名
 #   .\build.ps1 -AndroidSdk "D:\android-sdk"     # 手动指定
 #   .\build.ps1 -Platform 19 -BuildTools 34.0.0  # 指定平台/构建工具
+#
+# 出正式发布包（用自己的密钥签，且给清单去掉 debuggable）：
+#   $env:KS_PASS = "密钥库密码"
+#   .\build.ps1 -Release -Keystore D:\keys\release.keystore -KsAlias release
+#
+#   参数说明：
+#     -Keystore  发布密钥库路径。**不给就用项目根的 debug.keystore**
+#     -KsAlias   keystore 里的别名。不给会自动从 keytool 输出里识别
+#     -KsPass    密钥库密码。不给则读环境变量 KS_PASS（避免密码留在命令历史里）
+#     -KeyPass   私钥密码。不给则读 KEY_PASS，再不给就用 KsPass
+#     -Release   把清单里的 debuggable 改成 false（发布包不该可调试）
+#
+#   发布密钥**绝对不要**提交进仓库：.gitignore 已排除 *.keystore / *.jks。
 
 param(
     [string]$AndroidSdk = "",
     [string]$Platform = "",
     [string]$BuildTools = "",
     [string]$OutApk = "RootInstaller.apk",
-    [switch]$Release
+    [switch]$Release,
+    [string]$Keystore = "",
+    [string]$KsAlias = "",
+    [string]$KsPass = "",
+    [string]$KeyPass = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -302,14 +319,35 @@ Write-Step "aapt: 生成 R.java"
 $manifest = Join-Path $SrcDir "AndroidManifest.xml"
 if (-not (Test-Path $manifest)) { Fail "找不到 AndroidManifest.xml" }
 
-$rJavaPath = Join-Path $genDir "com\dsh\rootinstaller\R.java"
-
 # 关于 debuggable：aapt 没有对应的命令行开关（各 build-tools 版本差异很大，
 # 实测 build-tools 37 直接报 Unknown option '--debuggable'）。
 # 所以这个标记直接写在 AndroidManifest.xml 里（android:debuggable="true"），
 # 好处是崩溃后可以用 `adb shell run-as` 进私有目录取日志。
-Write-Host ("构建模式: " + $(if ($Release) { "Release" } else { "Debug" }) +
-    "（debuggable 由清单控制）")
+#
+# -Release 时要把它改成 false（发布包不该可调试）。做法是复制一份清单、
+# 只替换这一处，再用它去做 -M。
+# 注意 **aapt 要求文件名必须就是 AndroidManifest.xml** —— 踩过：
+# 改名成 AndroidManifest-release.xml 后 aapt 直接报
+# "ERROR: No AndroidManifest.xml file found."，所以复制到独立子目录、保持原名。
+if ($Release) {
+    $relDir = Join-Path $BuildDir "release-manifest"
+    New-Item -ItemType Directory -Path $relDir -Force | Out-Null
+    $relManifest = Join-Path $relDir "AndroidManifest.xml"
+    $rawManifest = [System.IO.File]::ReadAllText($manifest, [System.Text.Encoding]::UTF8)
+    if ($rawManifest -notmatch 'android:debuggable\s*=\s*"true"') {
+        Write-Host "清单里没有 debuggable=\"true\"，Release 无需改动" -ForegroundColor Yellow
+    } else {
+        $rawManifest = $rawManifest -replace 'android:debuggable\s*=\s*"true"', 'android:debuggable="false"'
+    }
+    [System.IO.File]::WriteAllText($relManifest, $rawManifest,
+        (New-Object System.Text.UTF8Encoding($false)))
+    $manifest = $relManifest
+    Write-Host "构建模式: Release（清单已去掉 debuggable）"
+} else {
+    Write-Host "构建模式: Debug（清单保持 debuggable=true，便于 run-as 取日志）"
+}
+
+$rJavaPath = Join-Path $genDir "com\dsh\rootinstaller\R.java"
 
 $code = Invoke-Tool -Exe $aaptExe -Arguments @(
     "package", "-f", "-m",
@@ -455,31 +493,89 @@ Write-Host "classes.dex 已写入"
 # ---------------------------------------------------------------------------
 Write-Step "签名 APK"
 
-# 调试密钥库**不能**放在 build\ 里。
+# 签名密钥的两种来源：
 #
-# 踩过的坑：原来放在 $BuildDir\debug.keystore，而 build\ 是构建产物目录
-# （tests\run-tests.ps1 会清空它的子目录，手工清理也常整个删掉）。
-# 密钥库一被删就会重新生成 —— 于是**每次构建用的是不同的密钥**，
-# 覆盖安装必然失败：
-#     adb: failed to install ... Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]
-# 现象很迷惑：代码没错、APK 也能装到新机器上，就是更新不了旧机器上那一份。
-# 放到项目根目录（和 build.gradle / settings.gradle 同级），并加进 .gitignore，
-# 这样密钥长期稳定，覆盖安装才正常。
-$ksPath = Join-Path $ProjectRoot "debug.keystore"
-$ksPass = "android"
-$ksAlias = "androiddebugkey"
+#  1) 不提供 -Keystore —— 用项目根目录的 debug.keystore。
+#     文件名叫 debug，但它其实是**稳定的本机密钥**，只要这个文件还在，
+#     覆盖安装就一直正常。
+#
+#     踩过的坑：原来放在 $BuildDir\debug.keystore，而 build\ 是构建产物目录
+#     （tests\run-tests.ps1 会清空它，手工清理也常整个删掉）。密钥一被删就会重新生成
+#     —— 于是每次构建用的是不同密钥，覆盖安装必然失败：
+#         adb: failed to install ... Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]
+#     现象很迷惑：代码没错、APK 也能装到新机器上，就是更新不了旧机器上那一份。
+#     所以放到项目根目录（和 build.gradle 同级），并加进 .gitignore。
+#
+#  2) 提供 -Keystore —— 用你自己的发布密钥，并启用 v2/v3 签名。
+#     密码可以走环境变量（KS_PASS / KEY_PASS），避免明文留在命令历史或 CI 日志里。
+#     **发布密钥绝不能提交进仓库**（.gitignore 已排除 *.keystore / *.jks）。
+$useReleaseKey = [bool]$Keystore
+# 调试密钥沿用原来的方案（v1 + v3，v2 关闭）；发布包补齐 v2，
+# 因为 v2 覆盖 Android 7.0–8.1，而 v3 只覆盖 9+。
+$v2Enabled = $(if ($useReleaseKey) { "true" } else { "false" })
 
-if (-not (Test-Path $ksPath)) {
-    Write-Host "生成调试用 keystore…"
-    $code = Invoke-Tool -Exe $keytoolExe -Arguments @(
-        "-genkeypair", "-v",
-        "-keystore", $ksPath,
-        "-alias", $ksAlias,
-        "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
-        "-storepass", $ksPass, "-keypass", $ksPass,
-        "-dname", "CN=Android Debug,O=Android,C=US"
-    )
-    if ($code -ne 0) { Fail "生成 keystore 失败（退出码 $code）" }
+if ($useReleaseKey) {
+    $ksPath = [System.IO.Path]::GetFullPath($Keystore)
+    if (-not (Test-Path $ksPath)) { Fail "找不到 keystore：$ksPath" }
+
+    $ksPass = $(if ($KsPass) { $KsPass } else { $env:KS_PASS })
+    if (-not $ksPass) {
+        Fail "使用 -Keystore 时必须提供 -KsPass，或设置环境变量 KS_PASS（不交互提示，方便 CI）"
+    }
+    $keyPass = $(if ($KeyPass) { $KeyPass } else { $env:KEY_PASS })
+    if (-not $keyPass) { $keyPass = $ksPass }
+
+    if ($KsAlias) {
+        $ksAlias = $KsAlias
+    } else {
+        # 自动识别别名。
+        #
+        # 这里刻意**不解析 "Alias name:" / "别名:"** —— 那是 keytool -v 的格式，
+        # 而且会随系统语言变化；更麻烦的是 keytool 按控制台代码页（本机 936/GBK）
+        # 输出，而脚本统一按 UTF-8 读日志，中文部分必然变乱码。
+        #
+        # 所以用**非 verbose** 的输出，它的第一条字段就是别名，且与语言无关：
+        #     release, 2026年11月21日, PrivateKeyEntry,
+        # 正则只依赖「行首若干字符 + 逗号 + 数字」，ASCII 别名不会受编码影响。
+        Write-Host "未指定 -KsAlias，尝试从 keystore 自动识别…"
+        $listLog = Join-Path $BuildDir "keystore-list.log"
+        & cmd.exe /c "`"$keytoolExe`" -list -keystore `"$ksPath`" -storepass `"$ksPass`" > `"$listLog`" 2>&1"
+        $listCode = $LASTEXITCODE
+        if ($listCode -ne 0) {
+            Fail "读取 keystore 失败（密码错误？退出码 $listCode）。也可以加 -KsAlias 跳过自动识别。"
+        }
+        $listing = ""
+        if (Test-Path $listLog) {
+            $listing = [System.IO.File]::ReadAllText($listLog, [System.Text.Encoding]::UTF8)
+        }
+        $m = [regex]::Match($listing, '(?m)^\s*([^,\r\n]+?)\s*,\s*\d')
+        if (-not $m.Success) {
+            Fail "无法自动识别 keystore 别名，请用 -KsAlias 指定（可先用 keytool -list -keystore <文件> 查看）"
+        }
+        $ksAlias = $m.Groups[1].Value.Trim()
+        Write-Host "识别到别名：$ksAlias"
+    }
+    Write-Host "签名密钥: $ksPath"
+    Write-Host "别名: $ksAlias（发布签名，v1+v2+v3）"
+} else {
+    $ksPath = Join-Path $ProjectRoot "debug.keystore"
+    $ksPass = "android"
+    $keyPass = "android"
+    $ksAlias = "androiddebugkey"
+
+    if (-not (Test-Path $ksPath)) {
+        Write-Host "生成调试用 keystore…"
+        $code = Invoke-Tool -Exe $keytoolExe -Arguments @(
+            "-genkeypair", "-v",
+            "-keystore", $ksPath,
+            "-alias", $ksAlias,
+            "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
+            "-storepass", $ksPass, "-keypass", $keyPass,
+            "-dname", "CN=Android Debug,O=Android,C=US"
+        )
+        if ($code -ne 0) { Fail "生成 keystore 失败（退出码 $code）" }
+    }
+    Write-Host "签名密钥: $ksPath（调试用；要发布请用 -Keystore 指定自己的密钥）"
 }
 
 $alignedApk = Join-Path $apkWorkDir "aligned.apk"
@@ -498,10 +594,12 @@ $signed = $false
 if (Test-Path $apksignerExe) {
     $code = Invoke-Tool -Exe $apksignerExe -Arguments @(
         "sign",
-        "--ks", $ksPath, "--ks-pass", "pass:$ksPass", "--key-pass", "pass:$ksPass",
+        "--ks", $ksPath, "--ks-pass", "pass:$ksPass", "--key-pass", "pass:$keyPass",
         "--ks-key-alias", $ksAlias,
         "--min-sdk-version", "15",
-        "--v1-signing-enabled", "true", "--v2-signing-enabled", "false",
+        "--v1-signing-enabled", "true",
+        "--v2-signing-enabled", $v2Enabled,
+        "--v3-signing-enabled", "true",
         "--out", $finalApk, $alignedApk
     )
     if ($code -eq 0 -and (Test-Path $finalApk)) { $signed = $true }
@@ -511,12 +609,25 @@ if (-not $signed) {
     Write-Host "apksigner 不可用或失败，改用 jarsigner" -ForegroundColor Yellow
     Copy-Item $alignedApk $finalApk -Force
     $code = Invoke-Tool -Exe $jarsignerExe -Arguments @(
-        "-keystore", $ksPath, "-storepass", $ksPass, "-keypass", $ksPass,
+        "-keystore", $ksPath, "-storepass", $ksPass, "-keypass", $keyPass,
         "-sigalg", "SHA1withRSA", "-digestalg", "SHA1",
         $finalApk, $ksAlias
     )
     if ($code -ne 0) { Fail "签名失败（退出码 $code）" }
     $signed = $true
+}
+
+# 签名结果自检：打印实际生效的签名方案与证书指纹。
+# 这一步值得留下 —— 发布时最容易搞混的就是「这个包到底是哪把钥匙签的」。
+if (Test-Path $apksignerExe) {
+    $verifyLog = Join-Path $BuildDir "verify.log"
+    & cmd.exe /c "`"$apksignerExe`" verify --verbose --print-certs `"$finalApk`" > `"$verifyLog`" 2>&1"
+    if (Test-Path $verifyLog) {
+        Write-Host "签名校验："
+        [System.IO.File]::ReadAllText($verifyLog, [System.Text.Encoding]::UTF8) -split "`r?`n" |
+            Where-Object { $_ -match '^(Verified using v[123]|Number of signers|Signer #1 certificate SHA-1)' } |
+            ForEach-Object { Write-Host ("  " + $_.Trim()) }
+    }
 }
 
 # ---------------------------------------------------------------------------

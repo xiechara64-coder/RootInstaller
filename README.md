@@ -51,6 +51,7 @@ adb install -r ./RootInstaller.apk
 - [root 安装是怎么实现的](#root-安装是怎么实现的)
 - [构建](#构建)
 - [安装到手机](#安装到手机)
+- [发布（正式签名与 CI）](#发布正式签名与-ci)
 - [代码结构](#代码结构)
 - [已知限制（请务必看）](#已知限制请务必看)
 - [排错](#排错)
@@ -293,6 +294,83 @@ adb push RootInstaller.apk /sdcard/RootInstaller.apk
 因为本应用还没装上去，没法自己装自己）。
 
 装完后**第一次启动会弹 root 授权框**，务必点「允许」并勾选记住。
+
+---
+
+## 发布（正式签名与 CI）
+
+### 自己出发布包
+
+默认构建用项目根目录的 `debug.keystore` 签名（名字叫 debug，但只要文件还在，
+它就是个稳定密钥，覆盖安装没问题）。**要对外发布**时用自己的密钥：
+
+```powershell
+$env:KS_PASS = "你的密钥库密码"        # 也可以改用 -KsPass 参数
+.\build.ps1 -Release `
+    -Keystore D:\keys\release.keystore `
+    -KsAlias release `
+    -OutApk RootInstaller-v1.0.0.apk
+```
+
+| 参数 | 作用 |
+|---|---|
+| `-Keystore` | 发布密钥库路径。不给就用 `debug.keystore` |
+| `-KsAlias` | 密钥别名。不给会从 `keytool -list` 输出里自动识别 |
+| `-KsPass` | 密钥库密码。不给读环境变量 `KS_PASS`（避免密码留在命令历史里） |
+| `-KeyPass` | 私钥密码。不给读 `KEY_PASS`，再不给就用 `KsPass` |
+| `-Release` | **把清单里的 `debuggable` 改成 false**，并启用 v1+v2+v3 签名 |
+
+构建结束会打印实际生效的签名方案与证书指纹，用来核对"这个包到底是哪把钥匙签的"：
+
+```
+签名校验：
+  Verified using v1 scheme (JAR signing): true
+  Verified using v2 scheme (APK Signature Scheme v2): true
+  Verified using v3 scheme (APK Signature Scheme v3): true
+  Signer #1 certificate SHA-1: 432e2c02...
+```
+
+> **签名密钥一定要备份。** 换了密钥，老用户就装不上更新（系统只允许同签名覆盖安装），
+> 只能卸载重装 —— 而卸载会丢掉该应用的数据。
+> 发布密钥**绝不能**提交进仓库：`.gitignore` 已排除 `*.keystore` / `*.jks`。
+
+### CI
+
+仓库带两个 workflow：
+
+| 文件 | 触发 | 做什么 |
+|---|---|---|
+| `.github/workflows/build.yml` | push 到 `main` / PR / 手动 | 构建 debug 包 + 跑那 9 组离线用例，产物作为 artifact |
+| `.github/workflows/release.yml` | 打 `v*` tag / 手动 | 用发布密钥签 **Release 包**，校验 v1+v2+v3 与 `debuggable=false`，挂到 GitHub Release |
+
+`build.yml` **不需要任何密钥**（`build.ps1` 会自动生成 debug.keystore）。
+
+`release.yml` 需要先在仓库的
+`Settings → Secrets and variables → Actions` 里配四个 secret：
+
+| Secret | 内容 |
+|---|---|
+| `RELEASE_KEYSTORE_BASE64` | 发布密钥库的 base64（单行） |
+| `RELEASE_KEYSTORE_PASSWORD` | 密钥库密码 |
+| `RELEASE_KEY_ALIAS` | 密钥别名 |
+| `RELEASE_KEY_PASSWORD` | 私钥密码（与库密码相同可留空） |
+
+生成 base64：
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("D:\keys\release.keystore")) |
+  Set-Clipboard
+```
+
+然后发布：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+workflow 会把密钥解码到 `$RUNNER_TEMP`（作业结束即销毁，不落工作区），
+构建、校验、发布，最后把 APK 挂到 Release 页。
 
 ---
 
