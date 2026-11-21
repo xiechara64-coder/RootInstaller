@@ -82,11 +82,49 @@ jobs:
       - name: Generate signature test samples
         shell: pwsh
         # 签名样本 APK 是生成的，不入库（.gitignore 排除 *.apk），所以 CI 里现场造
-        run: ./tests/make-signed-samples.ps1 -BuildTools 34.0.0
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'samples.log'
+          & ./tests/make-signed-samples.ps1 -BuildTools 34.0.0 *>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = ""
+            if (Test-Path $log) { $tail = (Get-Content $log -Tail 30) -join "`n" }
+            $tail = $tail -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+            Write-Host "::error::make-signed-samples.ps1 退出码 $code。日志尾部：$tail"
+            exit $code
+          }
+
+      - name: Upload samples log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: samples-log
+          path: ${{ runner.temp }}/samples.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Run offline tests
         shell: pwsh
-        run: ./tests/run-tests.ps1
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'tests.log'
+          & ./tests/run-tests.ps1 *>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = ""
+            if (Test-Path $log) { $tail = (Get-Content $log -Tail 30) -join "`n" }
+            $tail = $tail -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+            Write-Host "::error::run-tests.ps1 退出码 $code。日志尾部：$tail"
+            exit $code
+          }
+
+      - name: Upload tests log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-log
+          path: ${{ runner.temp }}/tests.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
