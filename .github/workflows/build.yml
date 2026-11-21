@@ -42,7 +42,42 @@ jobs:
       - name: Build APK
         shell: pwsh
         # build.ps1 在缺少 debug.keystore 时会自动生成一个，所以干净 checkout 也能构建
-        run: ./build.ps1 -Platform 19 -BuildTools 34.0.0
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'build.log'
+          Write-Host "PWD           = $(Get-Location)"
+          Write-Host "PSVersion     = $($PSVersionTable.PSVersion)"
+          Write-Host "JAVA_HOME     = $env:JAVA_HOME"
+          Write-Host "ANDROID_HOME  = $env:ANDROID_HOME"
+          Write-Host "SDK_ROOT      = $env:ANDROID_SDK_ROOT"
+          $j = Get-Command javac -ErrorAction SilentlyContinue
+          if ($j) { Write-Host "javac         = $($j.Source)" }
+          & javac -version 2>&1 | ForEach-Object { Write-Host "javac -version: $_" }
+
+          & ./build.ps1 -Platform 19 -BuildTools 34.0.0 *>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+
+          if ($code -ne 0) {
+            # 把日志尾部转成一条 ::error:: 注解。
+            # 目的是让失败原因出现在 check-run 注解里，便于远程排查
+            # （作业日志本身需要仓库写权限才能通过 API 下载）。
+            $tail = ""
+            if (Test-Path $log) {
+              $tail = (Get-Content $log -Tail 30) -join "`n"
+            }
+            $tail = $tail -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+            Write-Host "::error::build.ps1 退出码 $code。日志尾部：$tail"
+            exit $code
+          }
+          Write-Host "构建成功"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ${{ runner.temp }}/build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Generate signature test samples
         shell: pwsh
