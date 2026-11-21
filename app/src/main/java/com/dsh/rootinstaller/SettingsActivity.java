@@ -141,21 +141,21 @@ public class SettingsActivity extends Activity {
         // 「我怀疑图标显示不对」时的兜底 —— 缓存本来就可能过期，关键是让用户能一键清掉。
         root.addView(sectionTitle("缓存"));
 
-        final TextView iconCacheValue = new TextView(this);
-        final LinearLayout iconCacheEntry = makeEntry("清除图标缓存", new View.OnClickListener() {
+        final TextView cacheValue = new TextView(this);
+        final LinearLayout cacheEntry = makeEntry("清除解析缓存", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                IconCache.clear(SettingsActivity.this);
-                iconCacheValue.setText(IconCache.stats(SettingsActivity.this).describe());
-                toast("图标缓存已清除");
+                ParseCache.clear(SettingsActivity.this);
+                cacheValue.setText(cacheSummary());
+                toast("解析缓存已清除");
             }
         });
-        iconCacheValue.setTextSize(12f);
-        iconCacheValue.setTextColor(0xFF757575);
-        iconCacheValue.setPadding(0, dp(4), 0, 0);
-        iconCacheValue.setText(IconCache.stats(this).describe());
-        iconCacheEntry.addView(iconCacheValue);
-        root.addView(iconCacheEntry);
+        cacheValue.setTextSize(12f);
+        cacheValue.setTextColor(0xFF757575);
+        cacheValue.setPadding(0, dp(4), 0, 0);
+        cacheValue.setText(cacheSummary());
+        cacheEntry.addView(cacheValue);
+        root.addView(cacheEntry);
 
         // ---------- 关于 ----------
         //
@@ -393,6 +393,11 @@ public class SettingsActivity extends Activity {
     }
 
     // ------------------------------------------------------------------
+
+    /** 缓存的占用摘要，设置页里那一行的小字。 */
+    private String cacheSummary() {
+        return "解析结果（含图标）" + ParseCache.stats(this).describe();
+    }
 
     private int dp(int v) {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);

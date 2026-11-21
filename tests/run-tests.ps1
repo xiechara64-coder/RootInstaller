@@ -147,12 +147,14 @@ if (-not $androidJar) {
     Write-Host "未找到 android.jar，跳过第二组" -ForegroundColor Yellow
 } else {
     $androidTests = @("PermSortCheck", "PermAbilitiesCheck", "PermRiskCheck",
-                      "PermDiffCheck", "ApkSorterCheck")
+                      "PermDiffCheck", "ApkSorterCheck", "ParseCacheCheck")
     $common = @()
     # ApkCard 里用了 ApkSignatures 的状态常量和 SdkChange 的判定，一起编进来
     foreach ($s in @("ApkCard.java", "ApkSorter.java", "Settings.java", "Log.java",
                      "Perms.java", "PermSorter.java", "PermDiff.java", "PermAbilities.java",
-                     "ApkSignatures.java", "SigCompat.java", "SdkChange.java", "ApiNames.java")) {
+                     "ApkSignatures.java", "SigCompat.java", "SdkChange.java", "ApiNames.java",
+                     "ParseCacheData.java", "ParseCacheCodec.java", "ParseCache.java",
+                     "IconCacheKey.java", "IconCachePolicy.java")) {
         $common += (Join-Path $SrcDir $s)
     }
     foreach ($name in $androidTests) {

@@ -353,8 +353,12 @@ public class MainActivity extends ListActivity {
 
             // 一次扫描结束后统一淘汰一次图标缓存。
             // 不放在每个包的解析里：那样每存一个图标都要列一遍目录，反而更慢。
-            IconCache.trim(MainActivity.this);
-            IconCache.logScanSummary();
+            ParseCache.trim(MainActivity.this);
+            ParseCache.logScanSummary();
+            // 缓存是否真的落地了？只靠命中数看不出来（命中 0 可能是「没写过」，
+            // 也可能是「写了但读不到」），把目录和占用一起打出来。
+            Log.i("缓存占用：解析 " + ParseCache.stats(MainActivity.this).describe()
+                    + " @ " + ParseCache.dirPath(MainActivity.this));
 
             final long cost = System.currentTimeMillis() - t0;
             Log.i("扫描完成，找到 " + found.size() + " 个 APK，耗时 " + cost + "ms");

@@ -62,6 +62,24 @@ public final class ApkParser {
         }
 
         PackageManager pm = ctx.getPackageManager();
+
+        // ---- 先看整包解析缓存 ----
+        //
+        // 命中时跳过 getPackageArchiveInfo / AXML 解析 / 签名完整性校验 ——
+        // 这三件事正是扫描的主要开销，而它们对**同一个文件**的结论不会变。
+        // 键只含「路径 + 大小 + mtime」：此刻还没解析，拿不到包名和 versionCode。
+        // 文件被替换（哪怕只改一字节）大小或 mtime 几乎必然变，键随之失效。
+        ParseCacheData cached = ParseCache.load(ctx, path);
+        if (cached != null) {
+            // fill() 里连图标一起填（图标的 PNG 就在同一条缓存记录里）
+            ParseCache.fill(card, cached);
+            Log.i("解析命中缓存 pkg=" + card.packageName
+                    + " ver=" + card.versionCode + " label=" + card.label);
+            finish(ctx, pm, path, card, full,
+                    cached.signaturePresent, cached.nativeAbisPresent, true);
+            return card;
+        }
+
         int flags = PackageManager.GET_ACTIVITIES
                 | PackageManager.GET_SERVICES
                 | PackageManager.GET_RECEIVERS
@@ -125,6 +143,23 @@ public final class ApkParser {
             card.parseError = "解析异常: " + t;
         }
 
+        // 解析成功才缓存（ParseCache.save 内部会跳过失败结果）
+        ParseCache.save(ctx, path, ParseCache.capture(card, false, false));
+
+        finish(ctx, pm, path, card, full, false, false, false);
+        return card;
+    }
+
+    /**
+     * 收尾：与已装版本对比 → 风险汇总 → 完整解析才做的签名/架构 → 必要时更新缓存。
+     *
+     * <p>前两项**不能缓存**：对比结果取决于「现在装的是什么版本」，
+     * 风险汇总要跟着系统权限表走，每次扫描都必须重算。
+     * 缓存它们只会让「升级后状态没刷新」这类问题变多。
+     */
+    private static void finish(Context ctx, PackageManager pm, String path, ApkCard card,
+                               boolean full, boolean cachedSignature, boolean cachedAbis,
+                               boolean fromCache) {
         compareWithInstalled(ctx, pm, card);
 
         // 顺带算出权限风险等级，这样列表页不用再遍历一遍权限就能显示徽标。
@@ -137,26 +172,39 @@ public final class ApkParser {
             Log.w("权限风险汇总失败: " + t);
         }
 
-        // 完整解析才去读 CPU 架构（最贵的一步，列表用不到）
-        if (full) {
-            ensureNativeAbis(path, card);
-            card.fullParse = true;
+        if (!full) {
+            return;
+        }
 
-            // 读签名状态。
-            //
-            // 为什么必须在解析阶段就做、而且**不管包有没有装都要做**：
-            //  1. 签名是 APK 文件自身的属性，和「装没装」无关。之前把它挂在
-            //     详情页的「点击计算签名摘要」上，而那个入口属于默认隐藏的
-            //     「更多信息」，于是默认设置下签名永远算不出来，
-            //     安装时那道「签名不一致就别装」的拦截也永远不会触发。
-            //  2. 只翻 META-INF 是不够的：只做 v2/v3 签名的正常包在那里
-            //     什么都没有，会被误报成「未签名」。必须连 Signing Block 一起看。
-            //
-            // 开销可以接受：证书摘要是对证书字节做 SHA1（几 KB），
-            // 查找 Signing Block 只需从文件尾部读固定几块，不随包大小线性增长。
+        boolean needAbis = !cachedAbis;
+        boolean needSignature = !cachedSignature;
+
+        // 完整解析才去读 CPU 架构（最贵的一步，列表用不到）
+        if (needAbis) {
+            ensureNativeAbis(path, card);
+        }
+        card.fullParse = true;
+
+        // 读签名状态。
+        //
+        // 为什么必须在解析阶段就做、而且**不管包有没有装都要做**：
+        //  1. 签名是 APK 文件自身的属性，和「装没装」无关。之前把它挂在
+        //     详情页的「点击计算签名摘要」上，而那个入口属于默认隐藏的
+        //     「更多信息」，于是默认设置下签名永远算不出来，
+        //     安装时那道「签名不一致就别装」的拦截也永远不会触发。
+        //  2. 只翻 META-INF 是不够的：只做 v2/v3 签名的正常包在那里
+        //     什么都没有，会被误报成「未签名」。必须连 Signing Block 一起看。
+        //
+        // 开销可以接受：证书摘要是对证书字节做 SHA1（几 KB），
+        // 查找 Signing Block 只需从文件尾部读固定几块，不随包大小线性增长。
+        if (needSignature) {
             applySignatureInfo(path, card);
         }
-        return card;
+
+        // 本次补算了以前没算的部分（或本来就是完整解析）→ 把更全的结果写回缓存
+        if (!fromCache || needSignature || needAbis) {
+            ParseCache.save(ctx, path, ParseCache.capture(card, true, true));
+        }
     }
 
     /** 把 ApkSignatures 的结果填进卡片。 */
@@ -290,19 +338,10 @@ public final class ApkParser {
             }
             // 图标：这是「列表里图标一片空白」的修复点。
             //
-            // 先查磁盘缓存：解码图标是整个扫描里最重的一步（41.8 MB 的包单是这一步
-            // 就要 2.4 秒），缓存命中后就不再碰 AssetManager。
-            // 缓存键只用「打开文件就能拿到的元信息」（见 IconCacheKey），
-            // 所以换版本/换文件时自然失效，不会出现「新图标沿用旧图标名」的问题。
-            android.graphics.Bitmap icon = IconCache.load(ctx, sourcePath,
-                    card.packageName, card.versionCode);
-            if (icon == null) {
-                icon = loadIconBitmap(pm, ai);
-                if (icon != null) {
-                    IconCache.store(ctx, sourcePath, card.packageName, card.versionCode, icon);
-                }
-            }
-            card.icon = icon;
+            // 这里只做解码，落盘交给 ParseCache.capture()（图标随解析结果一起存），
+            // 所以读缓存时一次就能拿到字段和图标，不需要第二次解码、也不会出现
+            // 「图标缓存和解析缓存对不上」这种两份缓存的一致性问题。
+            card.icon = loadIconBitmap(pm, ai);
         }
 
         // minSdkVersion 没有公开 API，只能反射；4.3 上字段名就是 minSdkVersion
