@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  说明：这里刻意没有写 android:exported。
+  它是 Android 12 (API 31) 才引入的属性，写在以 API 18 为目标的清单里，
+  旧版 aapt 可能报未知属性。本应用的目标就是 4.3，用不到它。
+
+  另外注意 package 要和构建脚本里的 -p 参数一致，否则装出来的包名不对。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.dsh.rootinstaller"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <uses-sdk
+        android:minSdkVersion="15"
+        android:targetSdkVersion="18" />
+
+    <!-- 读取存储卡上的安装包 -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!--
+      这里没有声明 android.permission.INSTALL_PACKAGES。
+      那是系统签名级权限，普通应用声明了也拿不到，纯属噪音。
+      本应用能静默安装，完全是因为走了 root shell 的 pm install。
+    -->
+
+    <application
+        android:name=".App"
+        android:label="@string/app_name"
+        android:icon="@drawable/ic_launcher"
+        android:allowBackup="false"
+        android:debuggable="true"
+        android:theme="@style/AppTheme">
+        <!--
+          android:debuggable="true" 是刻意打开的：
+            · 崩溃后可以用 `adb shell run-as com.dsh.rootinstaller` 进私有目录取日志；
+            · 也便于通过 adb 直接调起内部 Activity 排查问题。
+          它不增加任何权限，只是允许调试。要出正式版时把这一行改成 false
+          （或用 build.ps1 -Release）即可。
+        -->
+
+        <!-- 主界面，同时也是被外部调用时的入口 -->
+        <!--
+          为什么主界面也加了 excludeFromRecents：
+
+          本应用的定位是**被别的应用拉起来的安装器**（浏览器/文件管理器下载完 ->
+          拉起本应用 -> 装完点「完成」或「打开」-> 回到来源应用），
+          而不是让用户先打开本应用、再自己扫卡找包。
+          原版系统安装器在这种场景下**装完不留任何后台痕迹**，本应用要对齐这个行为。
+
+          踩过的坑（这是个反直觉的机制）：
+            `excludeFromRecents` **只对「创建这个任务的那个 Activity」生效**。
+            外部拉起时，是 **MainActivity** 先创建了任务（随后它才 finish 掉自己），
+            所以只把标记挂在详情页上是**没用的** —— 任务照样出现在最近任务里，
+            留下一张点进去什么都没有的空卡片。
+            实测：只挂详情页 → 残留；主界面和详情页都挂 → 最近任务彻底干净。
+
+          代价（明确记录，别再当成 bug）：
+            从桌面图标启动本应用后，它**也不会出现在最近任务里**，
+            即无法从最近任务切回，只能回桌面重新点图标。
+            这是刻意的取舍：本应用的正常用法是「被拉起装完就走」，
+            为此牺牲「多任务切回列表」的便利是值得的。
+            （API 21+ 有 Activity.finishAndRemoveTask() 可以更精确地处理，
+             本机是 API 18，没有这个公开 API；细节见 DetailsActivity.finishThisPage）
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:label="@string/app_name"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|keyboardHidden|screenSize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+                入口 1：别的应用用 ACTION_VIEW + apk 的 mime 类型拉安装器。
+                这是绝大多数文件管理器、下载器的做法。
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/vnd.android.package-archive" />
+            </intent-filter>
+
+            <!-- 入口 2：ACTION_INSTALL_PACKAGE -->
+            <intent-filter>
+                <action android:name="android.intent.action.INSTALL_PACKAGE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          安装详情页（核心界面）
+
+          这里**刻意没有** noHistory。
+          曾经为了「离开后不留后台痕迹」加过 noHistory="true"，结果踩了坑：
+            检测 root 时会弹 SuperSU 授权框 -> 本 Activity 被推到后台 ->
+            noHistory 判定「已离开」并立刻销毁本页 -> 用户点完授权回来发现自己
+            掉回了列表首页，而安装其实还在后台跑。
+          所以改成：不用 noHistory，靠代码在合适的时候 finish()。
+          装完点「完成」、或外部调用场景按返回，都会正常结束本页。
+
+          为什么要加 excludeFromRecents：
+            被别的应用拉起来当安装器时，MainActivity 会 finish() 掉自己
+            （见 MainActivity.handleExternalIntent），于是任务栈里**只剩本页**。
+            本页一结束，就留下一条已经空掉的任务记录，用户退回桌面后在「最近任务」
+            里还能看到它 —— 点进去什么也没有，是很明显的残留感。
+
+            **但只挂在本页上是没用的**（这是踩过的坑，机制很反直觉）：
+            `excludeFromRecents` 只对「创建这个任务的那个 Activity」生效，
+            而外部拉起时建任务的是 **MainActivity**（它随后才 finish 掉自己）。
+            所以标记必须同时挂在 MainActivity 上 —— 那边有详细说明。
+            实测对照：只挂本页 → 最近任务里残留；两处都挂 → 彻底干净。
+
+            注意它和 noHistory 的区别：noHistory 是「一离开就销毁」（会踩上面那个坑），
+            这里只是「不让这个任务出现在最近任务里」，不会提前销毁本页。
+
+          已知限制：API 21 起才有 Activity.finishAndRemoveTask() 可以主动把任务
+            从最近任务里摘掉；本机是 API 18，没有这个公开 API。
+            代码里仍对 API 21+ 走了那条路（见 DetailsActivity.finishThisPage），
+            换到新设备上会更干净。
+        -->
+        <activity
+            android:name=".DetailsActivity"
+            android:label="@string/title_details"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|keyboardHidden|screenSize" />
+
+        <!-- 手动选择安装包 -->
+        <activity
+            android:name=".FilePickerActivity"
+            android:label="@string/title_picker" />
+
+        <!-- 设置页（从主界面溢出菜单进入） -->
+        <activity
+            android:name=".SettingsActivity"
+            android:label="@string/title_settings" />
+
+        <!--
+          崩溃记录器自测用。刻意不导出（没有 intent-filter，也没有 exported="true"），
+          否则任何应用都能发个 Intent 让本应用崩溃 —— 那是拒绝服务漏洞。
+
+          只能用 root 调起：
+            adb shell su -c "am start -n com.dsh.rootinstaller/.CrashTestActivity"
+
+          验证完可以把这段和 CrashTestActivity.java 一起删掉。
+        -->
+        <activity
+            android:name=".CrashTestActivity"
+            android:label="崩溃自测" />
+
+
+        <!-- root 安装服务 -->
+        <service
+            android:name=".InstallService"
+            android:exported="false" />
+
+        <!--
+            入口 3：广播形式的安装请求。
+            有些应用不发 startActivity 而是发广播，只有注册接收器才收得到。
+        -->
+        <receiver
+            android:name=".InstallReceiver"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.INSTALL_PACKAGE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/vnd.android.package-archive" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

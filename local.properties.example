@@ -1,0 +1,11 @@
+# Android Studio 需要的属性文件。
+#
+# sdk.dir 指向你的 Android SDK 安装位置。
+# Windows 路径里的反斜杠要写成双反斜杠，或者直接用正斜杠。
+#
+# 例如（Windows）：  sdk.dir=C\:\\Users\\你的用户名\\AppData\\Local\\Android\\Sdk
+# 例如（macOS）：    sdk.dir=/Users/你的用户名/Library/Android/sdk
+# 例如（Linux）：    sdk.dir=/home/你的用户名/Android/Sdk
+#
+# 这个文件属于本地配置，不要提交到版本库。
+# 如果设置了环境变量 ANDROID_HOME，这一行也可以留空不写。

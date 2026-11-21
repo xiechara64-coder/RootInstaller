@@ -1,0 +1,26 @@
+// 根构建脚本。
+//
+// 注意：主力构建方式是同目录下的 build.ps1 / build.sh（aapt + javac + d8）。
+// 这个 Gradle 配置是给「想用 Android Studio 打开、调试、改动」的人准备的。
+//
+// 为什么两套？
+//   Android Gradle Plugin 8.x 强制要求 compileSdk >= 21，
+//   而本应用的目标是 Android 4.3。用 compileSdk 34 能编过（只用到 4.3 的 API），
+//   但如果你想要绝对「零意外」，用 build.ps1 那条链路更贴近老 SDK 的真实环境。
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.5.2'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

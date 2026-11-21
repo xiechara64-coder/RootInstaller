@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  主界面的「更多」菜单。
+
+  这一份 XML **只用来声明菜单项的 id**，真正的文案和顺序定义在
+  MainActivity.MENU_ITEMS 里（单一数据源）。
+
+  为什么要这么绕？因为这台设备有硬件菜单键，Holo 主题就不会在 ActionBar
+  上显示溢出图标，只靠系统菜单等于「在没有菜单键的设备上没有入口」。
+  所以除了系统菜单，界面上还有一个自己画的「⋮」入口项（下面的 menu_overflow）。
+
+  两条入口如果各写一份文案，早晚会走偏。于是：
+    · 文案和顺序 -> MainActivity.MENU_ITEMS（唯一来源）
+    · id        -> 本文件（供系统菜单的 onOptionsItemSelected 使用）
+  两边通过同一个顺序绑定，改菜单只需要动 MENU_ITEMS 一处。
+-->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      自己在 ActionBar 右侧放的「三个竖点」入口。
+
+      为什么要有它：设备**带实体菜单键**时（实测华为 C8816D），Holo 主题
+      **不会**在 ActionBar 上显示系统溢出图标 —— 那个位置一直是空的，
+      用户找不到菜单入口。自己放一个才能保证任何设备上都有可见入口。
+
+      但在**没有**实体菜单键的设备上，系统自己也会画溢出按钮，
+      此时这个自绘入口就会和它并排出现两个三点。
+      所以它的显隐是动态的（见 ActionBarHelper.hideOwnOverflowIfSystemShows）：
+        系统会画溢出 → 隐藏本项，菜单交给系统按钮
+        系统不画     → 显示本项，保证有入口
+      两者互斥，任何设备上都只有一个入口。
+
+      图标是用 tools/make-icon.ps1 画的点阵 PNG（ic_overflow.png），
+      不用文字「⋮」：那个字形在目标 ROM 上画不出来。
+    -->
+    <item
+        android:id="@+id/menu_overflow"
+        android:orderInCategory="1"
+        android:showAsAction="always"
+        android:icon="@drawable/ic_overflow"
+        android:title="更多" />
+
+    <item
+        android:id="@+id/menu_pick_file"
+        android:orderInCategory="10"
+        android:showAsAction="never"
+        android:title="选择安装包文件…" />
+
+    <item
+        android:id="@+id/menu_rescan"
+        android:orderInCategory="20"
+        android:showAsAction="never"
+        android:title="重新扫描" />
+
+    <item
+        android:id="@+id/menu_settings"
+        android:orderInCategory="30"
+        android:showAsAction="never"
+        android:title="设置" />
+
+    <item
+        android:id="@+id/menu_check_root"
+        android:orderInCategory="40"
+        android:showAsAction="never"
+        android:title="检测 root 权限" />
+
+    <item
+        android:id="@+id/menu_clear_crash"
+        android:orderInCategory="50"
+        android:showAsAction="never"
+        android:title="清除崩溃记录" />
+
+</menu>

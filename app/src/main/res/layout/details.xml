@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- 顶部：图标 + 名称 + 文件名/体积 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#F5F5F5"
+        android:padding="10dp">
+
+        <ImageView
+            android:id="@+id/app_icon"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:contentDescription="@string/title_details" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginLeft="10dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/app_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:textColor="#212121"
+                android:singleLine="true"
+                android:ellipsize="middle"
+                android:text="解析中…" />
+
+            <TextView
+                android:id="@+id/app_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#757575"
+                android:layout_marginTop="2dp"
+                android:singleLine="true"
+                android:ellipsize="middle" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 中间：可滚动的详情列表，占满剩余空间 -->
+    <ListView
+        android:id="@+id/info_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:cacheColorHint="#00000000"
+        android:divider="#00000000"
+        android:dividerHeight="0dp" />
+
+    <!-- 底部：操作区 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#ECEFF1"
+        android:padding="8dp">
+
+        <CheckBox
+            android:id="@+id/allow_downgrade"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:visibility="gone"
+            android:text="@string/allow_downgrade" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <!--
+              两个按钮的约束要一致，否则会有几像素的高低差：
+                · 都是 44dp 固定高度 + center_vertical
+                · 都 singleLine，杜绝换行后文字溢出把底部描边顶掉
+              左侧「安装」占满剩余宽度；右侧「卸载」在未安装时会被代码隐藏，
+              此时「安装」自动铺满整行。
+            -->
+            <TextView
+                android:id="@+id/btn_install"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:layout_gravity="center_vertical"
+                android:background="@drawable/btn_primary"
+                android:gravity="center"
+                android:singleLine="true"
+                android:textSize="15sp"
+                android:textColor="#FFFFFF"
+                android:text="@string/btn_install" />
+
+            <TextView
+                android:id="@+id/btn_uninstall"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:layout_marginLeft="8dp"
+                android:layout_gravity="center_vertical"
+                android:background="@drawable/btn_danger"
+                android:gravity="center"
+                android:minWidth="88dp"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:singleLine="true"
+                android:textSize="14sp"
+                android:textColor="#C62828"
+                android:text="@string/btn_uninstall" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!--
+      状态区：上面一条进度条 + 下面一行「转圈 + 文字」。
+
+      为什么进度条要 8dp 而不是 4dp、文字旁还要再加一个转圈：
+        上一版只放了一条 4dp 的横条，实测用户**完全没注意到**它在动
+        （深色底 + 细条 + 安装在后台完成得太快）。
+        现在的做法是三重提示：加粗的横条 + 转圈 + 文字，确保一眼可见。
+    -->
+    <LinearLayout
+        android:id="@+id/status_area"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#263238">
+
+        <ProgressBar
+            android:id="@+id/install_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="8dp"
+            android:indeterminate="true"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ProgressBar
+                android:id="@+id/install_spinner"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="8dp"
+                android:indeterminate="true"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/install_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:padding="8dp"
+                android:textSize="12sp"
+                android:textColor="#ECEFF1"
+                android:text="" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

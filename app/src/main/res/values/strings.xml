@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RootInstaller</string>
+    <string name="title_details">安装详情</string>
+    <string name="title_picker">选择安装包</string>
+    <string name="title_settings">设置</string>
+
+    <!--
+      按钮文案刻意用短词：这块屏幕只有 540px 宽，
+      早先用「用 root 权限安装」+「卸载已安装版本」两个长句，
+      右侧按钮会被挤到换行成两行，文字溢出把底部描边顶掉，
+      看起来就是「按钮比左边低一点、底线被挡住」。
+      短文案 + singleLine 一起才能根治。
+    -->
+    <string name="btn_install">安装</string>
+    <string name="btn_uninstall">卸载</string>
+    <string name="allow_downgrade">允许降级安装（版本号低于已装版本）</string>
+    <string name="btn_up">上级目录</string>
+
+    <string name="scanning">正在扫描设备上的文件…</string>
+    <string name="no_apk_found">没有在设备上找到安装包。</string>
+</resources>

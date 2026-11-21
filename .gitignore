@@ -1,0 +1,32 @@
+# 构建产物
+build/
+*.apk
+*.idsig
+*.ap_
+*.dex
+*.class
+
+# Gradle
+.gradle/
+gradlew
+gradlew.bat
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 签名相关（绝对不要提交密钥）
+*.keystore
+*.jks
+
+# 测试过程中生成的工作目录与日志
+# （里面会带本机绝对路径，例如 C:/Users/<name>/...，不该进仓库）
+tests/samples/_*/
+tests/samples/_minwork/
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db

@@ -1,0 +1,68 @@
+﻿{
+    "CertSha1":  "368ea0b8d2133d8fcd02a9bad96df610e0ea47c2",
+    "Samples":  [
+                    {
+                        "Name":  "base-unsigned.apk",
+                        "Size":  1373,
+                        "Schemes":  "(无)",
+                        "SigningBlock":  false,
+                        "DoesNotVerify":  true
+                    },
+                    {
+                        "Name":  "base-unsigned-target29.apk",
+                        "Size":  1374,
+                        "Schemes":  "(无)",
+                        "SigningBlock":  false,
+                        "DoesNotVerify":  true
+                    },
+                    {
+                        "Name":  "signed-v1.apk",
+                        "Size":  3176,
+                        "Schemes":  "v1",
+                        "SigningBlock":  false,
+                        "DoesNotVerify":  false
+                    },
+                    {
+                        "Name":  "signed-v1-target29.apk",
+                        "Size":  3177,
+                        "Schemes":  "v1",
+                        "SigningBlock":  false,
+                        "DoesNotVerify":  false
+                    },
+                    {
+                        "Name":  "signed-v1v2v3.apk",
+                        "Size":  8597,
+                        "Schemes":  "v1+v2+v3",
+                        "SigningBlock":  true,
+                        "DoesNotVerify":  false
+                    },
+                    {
+                        "Name":  "signed-v2.apk",
+                        "Size":  8400,
+                        "Schemes":  "(无)",
+                        "SigningBlock":  true,
+                        "DoesNotVerify":  true
+                    },
+                    {
+                        "Name":  "signed-v2v3.apk",
+                        "Size":  8400,
+                        "Schemes":  "(无)",
+                        "SigningBlock":  true,
+                        "DoesNotVerify":  true
+                    },
+                    {
+                        "Name":  "tampered-v1.apk",
+                        "Size":  3301,
+                        "Schemes":  "(无)",
+                        "SigningBlock":  false,
+                        "DoesNotVerify":  true
+                    },
+                    {
+                        "Name":  "unsigned.apk",
+                        "Size":  1373,
+                        "Schemes":  "(无)",
+                        "SigningBlock":  false,
+                        "DoesNotVerify":  true
+                    }
+                ]
+}

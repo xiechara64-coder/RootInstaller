@@ -1,0 +1,57 @@
+// 应用模块构建脚本（Android Studio 路径，备用）
+//
+// compileSdk 用 34 而不是 18：AGP 8.x 不接受低于 21 的 compileSdk。
+// 这只影响「用哪些 API 编译」，不影响运行时的最低版本 —— 真正的下限由
+// minSdkVersion 决定，而源码里只调用了 Android 4.3 就有的公开 API。
+//
+// 想要最接近老环境的结果，请用 build.ps1（Platform 选 android-19）。
+
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.dsh.rootinstaller'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.dsh.rootinstaller"
+        minSdkVersion 15
+        targetSdkVersion 18
+        versionCode 1
+        versionName "1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                    'proguard-rules.pro'
+        }
+    }
+
+    lint {
+        // 目标 API 18 会触发大量「新版本才有的建议」，这些不是错误，别让构建中断
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    packagingOptions {
+        resources {
+            excludes += ['META-INF/*.kotlin_module']
+        }
+    }
+}
+
+// 刻意不引入任何第三方依赖：
+// 4.3 时代的 Dalvik 对方法数、依赖解析都比较敏感，
+// 这个应用也完全不需要 support library —— 全部用系统原生 API 实现。
+dependencies {
+}

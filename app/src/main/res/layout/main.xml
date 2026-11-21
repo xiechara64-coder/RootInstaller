@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!--
+      顶部信息条：左边是设备信息 / 扫描进度 / root 检测结果，
+      右边是「更多」按钮（三个竖点）。
+
+      为什么要在界面里自己放一个菜单按钮？
+        借用系统 ActionBar 的溢出菜单不可靠 —— 设备有硬件菜单键时，
+        Holo 主题不会在标题栏显示溢出图标（实测华为 C8816D 就是这样）。
+        如果用户恰好没有触摸按键、或菜单键坏了，就完全打不开菜单。
+        所以这里在应用自己的界面上放一个按钮，作为始终可用的入口。
+        硬件菜单键那条路仍然保留，两条路都能用。
+    -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#ECEFF1">
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:padding="8dp"
+            android:textSize="12sp"
+            android:textColor="#37474F"
+            android:text="" />
+
+        <!--
+          信息条上的「更多」按钮：**只作为兜底**。
+          正常情况用 ActionBar 右上角那一个入口 —— 无实体菜单键的设备上是
+          系统原生溢出按钮，有实体菜单键的设备上是我们自绘的入口项
+          （两者互斥，只出现一个，见 ActionBarHelper）。
+          这个按钮默认隐藏，长按左边的状态文字可以手动唤出，
+          用来应对「ActionBar 被 ROM 吃掉」或「菜单键坏了」的极端情况。
+        -->
+        <ImageView
+            android:id="@+id/btn_more"
+            android:layout_width="46dp"
+            android:layout_height="match_parent"
+            android:padding="12dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_overflow"
+            android:contentDescription="更多" />
+    </LinearLayout>
+
+    <!--
+      仅用于给 PopupMenu 定位的锚点：0 尺寸、不可见、不参与布局。
+      从 ActionBar 上那个竖点打开菜单时需要一个存在于视图树里的锚点，
+      而上面的兜底按钮可能是 GONE 的，拿它当锚点会让弹窗定位异常。
+    -->
+    <View
+        android:id="@+id/menu_anchor"
+        android:layout_width="0dp"
+        android:layout_height="0dp" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ListView
+            android:id="@android:id/list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="#E0E0E0"
+            android:dividerHeight="1dp"
+            android:cacheColorHint="#00000000" />
+
+        <TextView
+            android:id="@+id/empty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:padding="24dp"
+            android:textSize="14sp"
+            android:textColor="#757575"
+            android:text="@string/no_apk_found" />
+    </FrameLayout>
+</LinearLayout>

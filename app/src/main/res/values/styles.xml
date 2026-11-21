@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      用 Holo 主题是因为它在 API 14+ 才有，正好覆盖本应用的最低要求（API 15），
+      而且在 4.3 上看起来是原生的深色标题栏 + 浅色内容区，不会显得突兀。
+    -->
+    <style name="AppTheme" parent="@android:style/Theme.Holo.Light.DarkActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>
