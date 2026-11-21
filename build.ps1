@@ -292,12 +292,19 @@ Write-Host "javac 版本: $($javaVerRaw.Trim())"
 $javaMajor = 8
 if ($javaVerRaw -match 'javac\s+(\d+)') { $javaMajor = [int]$Matches[1] }
 
-if ($javaMajor -ge 21) {
-    $javaTarget = "8"
-} else {
-    $javaTarget = "7"
-}
-Write-Host "编译目标字节码版本: $javaTarget"
+# 字节码目标：**固定 8**。
+#
+# 早先写过「JDK >= 21 用 8，否则用 7」，想两边都兼容。结果在 CI 上埋了个
+# 很难查的坑：本地是 JDK 26 → target 8，CI 是 JDK 17 → target 7。
+# Java 7 语言级别要求「匿名内部类捕获的局部变量必须显式 final」，
+# 于是 ApkParser.comparePermissions 里那个 PermDiff.Classifier 在 CI 上报
+#     local variable ctx is accessed from within inner class; needs to be declared final
+# 而本地永远复现不出来（跑了几十次本地构建都是绿的）。
+#
+# 既然 JDK 21+ 最低只支持 8、JDK 8–20 也都支持 8，就没有理由再用 7：
+# 统一成 8，本地和 CI 的编译行为才能一致。
+$javaTarget = "8"
+Write-Host "编译目标字节码版本: $javaTarget（javac $javaMajor）"
 
 # ---------------------------------------------------------------------------
 # 4. 准备构建目录
@@ -394,6 +401,13 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 Write-Host "源文件清单: $argFile"
 
 $code = Invoke-Tool -Exe $javacExe -Arguments @(
+    # -J-Xmx512m：限住 javac 自己的 JVM 堆。
+    # 不设的话 JVM 默认按物理内存的 1/4 预留（本机 4 GB → 约 1 GB），
+    # 在内存/页面文件紧张的机器上会直接起不来：
+    #     Native memory allocation (mmap) failed to map ... G1 virtual space
+    #     error=1455 (页面文件太小)
+    # 这个工程只有 31 个源文件，512 MB 完全够用。
+    "-J-Xmx512m",
     "-encoding", "UTF-8",
     "-source", $javaTarget, "-target", $javaTarget,
     "-bootclasspath", $androidJar,
@@ -430,7 +444,17 @@ Write-Host "class 文件数量: $($classFiles.Count)"
 $d8ArgFile = Join-Path $BuildDir "d8-args.txt"
 [System.IO.File]::WriteAllLines($d8ArgFile, [string[]]$classFiles, $utf8NoBom)
 # @argfile 走 RawArguments（不加引号），否则 @ 前缀会被引号破坏，见 Invoke-Tool 的注释
+#
+# -JXmx512m：给 d8 的 JVM 限个堆。
+#   d8.bat 默认用 -Xmx1024M，在内存小的机器上会直接起不来：
+#       There is insufficient memory for the Java Runtime Environment to continue.
+#       Native memory allocation (malloc) failed to allocate ...
+#   本机（3.9 GB 内存、页面文件固定 4 GB）实测偶发，表现为「javac 明明成功了、
+#   卡在 d8 这一步」，很容易被误当成代码问题。
+#   这个工程只有 100 来个 class，512 MB 绰绰有余；d8.bat 会在看到 -JXmx 时
+#   自动去掉它自己的默认值（见 d8.bat 里的 defaultXmx 处理）。
 $code = Invoke-Tool -Exe $d8Bat -Arguments @(
+    "-JXmx512m",
     "--min-api", "15", "--output", $dexDir, "--lib", $androidJar
 ) -RawArguments @("@" + $d8ArgFile)
 if ($code -ne 0) { Fail "d8 转换 dex 失败（退出码 $code）" }

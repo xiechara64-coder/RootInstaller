@@ -1046,7 +1046,7 @@ public final class ApkParser {
      * 实际对比逻辑在 {@link PermDiff}（不依赖 Android API，可离线穷举验证）。
      * 这里只负责取数据。
      */
-    private static void comparePermissions(Context ctx, PackageInfo installed, ApkCard card) {
+    private static void comparePermissions(final Context ctx, PackageInfo installed, ApkCard card) {
         try {
             // installed.requestedPermissions 在少数情况下会是 null
             // （ROM 没提供、或该应用确实没申请权限）。
