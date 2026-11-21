@@ -84,53 +84,76 @@ jobs:
           KS_PASS: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
+          $log = Join-Path $env:RUNNER_TEMP 'release-build.log'
           $out = "RootInstaller-${{ steps.meta.outputs.tag }}.apk"
-          $psArgs = @(
-            '-Release',
-            '-Platform', '19',
-            '-BuildTools', '34.0.0',
-            '-Keystore', "${{ steps.keystore.outputs.path }}",
-            '-OutApk', $out
-          )
+
+          # 必须用**哈希表** splat。
+          #
+          # 踩过的坑：一开始写的是数组 splat @('-Release','-Platform','19',...)，
+          # 而 PowerShell 的数组 splat 是按**位置**传参的，实测结果变成：
+          #     AndroidSdk='-Release'  Platform='-Platform'  BuildTools='19' ...
+          # 于是 build.ps1 拿 '-Release' 当 SDK 路径去找，1 秒就报
+          # 「没有找到 Android SDK」并退出 —— 现象很像脚本本身坏了。
+          $params = @{
+            Platform   = '19'
+            BuildTools = '34.0.0'
+            Keystore   = "${{ steps.keystore.outputs.path }}"
+            OutApk     = $out
+          }
           $alias = "${{ secrets.RELEASE_KEY_ALIAS }}"
-          if ($alias) { $psArgs += @('-KsAlias', $alias) }
-          ./build.ps1 @psArgs
+          if ($alias) { $params['KsAlias'] = $alias }
+
+          & ./build.ps1 -Release @params *>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = ""
+            if (Test-Path $log) { $tail = (Get-Content $log -Tail 30) -join "`n" }
+            $tail = $tail -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+            Write-Host "::error::build.ps1 -Release 退出码 $code。日志尾部：$tail"
+            exit $code
+          }
 
       - name: Verify release APK
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $apk = "RootInstaller-${{ steps.meta.outputs.tag }}.apk"
-          if (-not (Test-Path $apk)) { throw "找不到产物 $apk" }
+          try {
+            $apk = "RootInstaller-${{ steps.meta.outputs.tag }}.apk"
+            if (-not (Test-Path $apk)) { throw "找不到产物 $apk" }
 
-          $sdk = $env:ANDROID_HOME
-          if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
-          $bt = Join-Path $sdk 'build-tools\34.0.0'
+            $sdk = $env:ANDROID_HOME
+            if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
+            $bt = Join-Path $sdk 'build-tools\34.0.0'
 
-          # 1) 必须是 v1+v2+v3（v1 供 Android 4.x，v2 覆盖 7.0-8.1，v3 覆盖 9+）
-          $log = Join-Path $env:RUNNER_TEMP 'verify.log'
-          & cmd.exe /c "`"$bt\apksigner.bat`" verify --verbose `"$apk`" > `"$log`" 2>&1"
-          if ($LASTEXITCODE -ne 0) { throw "apksigner verify 失败" }
-          $text = Get-Content $log -Raw
+            # 1) 必须是 v1+v2+v3（v1 供 Android 4.x，v2 覆盖 7.0-8.1，v3 覆盖 9+）
+            $log = Join-Path $env:RUNNER_TEMP 'verify.log'
+            & cmd.exe /c "`"$bt\apksigner.bat`" verify --verbose `"$apk`" > `"$log`" 2>&1"
+            if ($LASTEXITCODE -ne 0) { throw "apksigner verify 失败" }
+            $text = Get-Content $log -Raw
 
-          # apksigner 的原文形如：Verified using v1 scheme (JAR signing): true
-          $checks = @(
-            @{ Name = 'v1'; Pattern = 'Verified using v1 scheme \(JAR signing\):\s*true' },
-            @{ Name = 'v2'; Pattern = 'Verified using v2 scheme \(APK Signature Scheme v2\):\s*true' },
-            @{ Name = 'v3'; Pattern = 'Verified using v3 scheme \(APK Signature Scheme v3\):\s*true' }
-          )
-          foreach ($c in $checks) {
-            if ($text -notmatch $c.Pattern) { throw "签名校验失败：缺少 $($c.Name) 签名" }
+            # apksigner 的原文形如：Verified using v1 scheme (JAR signing): true
+            $checks = @(
+              @{ Name = 'v1'; Pattern = 'Verified using v1 scheme \(JAR signing\):\s*true' },
+              @{ Name = 'v2'; Pattern = 'Verified using v2 scheme \(APK Signature Scheme v2\):\s*true' },
+              @{ Name = 'v3'; Pattern = 'Verified using v3 scheme \(APK Signature Scheme v3\):\s*true' }
+            )
+            foreach ($c in $checks) {
+              if ($text -notmatch $c.Pattern) { throw "签名校验失败：缺少 $($c.Name) 签名" }
+            }
+
+            # 2) 发布包不能留 debuggable=true
+            $dump = Join-Path $env:RUNNER_TEMP 'manifest.xml'
+            & cmd.exe /c "`"$bt\aapt.exe`" dump xmltree `"$apk`" AndroidManifest.xml > `"$dump`" 2>&1"
+            $manifest = Get-Content $dump -Raw
+            if ($manifest -match 'debuggable.*0xffffffff') {
+              throw "发布包仍是 android:debuggable=true"
+            }
+            Write-Host "签名方案 v1/v2/v3 全部通过，debuggable=false ✓"
+          } catch {
+            $msg = $_.Exception.Message -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+            Write-Host "::error::release 校验失败：$msg"
+            throw
           }
-
-          # 2) 发布包不能留 debuggable=true
-          $dump = Join-Path $env:RUNNER_TEMP 'manifest.xml'
-          & cmd.exe /c "`"$bt\aapt.exe`" dump xmltree `"$apk`" AndroidManifest.xml > `"$dump`" 2>&1"
-          $manifest = Get-Content $dump -Raw
-          if ($manifest -match 'debuggable.*0xffffffff') {
-            throw "发布包仍是 android:debuggable=true"
-          }
-          Write-Host "签名方案 v1/v2/v3 全部通过，debuggable=false ✓"
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
