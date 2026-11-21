@@ -11,6 +11,7 @@
 // ===========================================================================
 
 import com.dsh.rootinstaller.ApkCard;
+import com.dsh.rootinstaller.CacheSweep;
 import com.dsh.rootinstaller.IconCacheKey;
 import com.dsh.rootinstaller.ParseCache;
 import com.dsh.rootinstaller.ParseCacheCodec;
@@ -199,6 +200,54 @@ public class ParseCacheCheck {
             expect("失败原因被记录", eq("解析异常: 测试", d.parseError));
             ParseCacheData back = ParseCacheCodec.decode(ParseCacheCodec.encode(d));
             expect("往返后仍是失败状态", back != null && !back.parseOk);
+            System.out.println();
+        }
+
+        // ---------- 6. 孤儿缓存的清理规则 ----------
+        //
+        // 规则一旦写错，表现是「缓存被误删」或「垃圾永远不清」，都不会报错。
+        // 尤其要守住：SD 卡没挂载时（一个键都没扫到）**绝对不能删**。
+        System.out.println("6. 孤儿缓存：该删的删、该留的留");
+        {
+            long now = 1000000000000L;
+            long day = 24L * 60L * 60L * 1000L;
+            long grace = CacheSweep.DEFAULT_GRACE_MILLIS;
+            String keyA = "aaaaaaaaaaaaaaaa";
+            String keyB = "bbbbbbbbbbbbbbbb";
+
+            java.util.Set<String> seenA = new java.util.HashSet<String>();
+            seenA.add(keyA);
+            java.util.Set<String> seenB = new java.util.HashSet<String>();
+            seenB.add(keyB);
+            java.util.Set<String> none = new java.util.HashSet<String>();
+
+            long[] oldA = new long[]{now - 30 * day};
+            long[] freshA = new long[]{now - day};
+            String[] keysA = new String[]{keyA};
+
+            expect("仍在用（本次扫到了）→ 不删",
+                    CacheSweep.chooseOrphans(oldA, keysA, seenA, now, grace).length == 0);
+            // 注意：这里用 seenB（本次扫到了**别的**键，但这个文件没被扫到）
+            // 才是真正的「孤儿」场景；空集合代表「什么都没扫到」，见下一条。
+            expect("不在用 + 超过宽限期（30 天）→ 删",
+                    CacheSweep.chooseOrphans(oldA, keysA, seenB, now, grace).length == 1);
+            expect("不在用 + 未超宽限期（1 天）→ 不删（可能只是刚拔了卡）",
+                    CacheSweep.chooseOrphans(freshA, keysA, seenB, now, grace).length == 0);
+            expect("一个键都没扫到（卡没挂载）→ 不删",
+                    CacheSweep.chooseOrphans(oldA, keysA, none, now, grace).length == 0);
+            expect("seen 为 null → 不删",
+                    CacheSweep.chooseOrphans(oldA, keysA, null, now, grace).length == 0);
+            expect("最后访问时间在未来（时钟被改）→ 不删",
+                    CacheSweep.chooseOrphans(new long[]{now + 5 * day}, keysA, none, now, grace).length == 0);
+            expect("长度不一致 → 返回空，不越界",
+                    CacheSweep.chooseOrphans(new long[2], keysA, none, now, grace).length == 0);
+            expect("null 输入 → 返回空",
+                    CacheSweep.chooseOrphans(null, null, none, now, grace).length == 0);
+
+            long[] mixedLast = new long[]{now - 30 * day, now - 30 * day};
+            String[] mixedKeys = new String[]{keyA, keyB};
+            int[] del = CacheSweep.chooseOrphans(mixedLast, mixedKeys, seenB, now, grace);
+            expect("混合场景只删不在用的那条", del.length == 1 && del[0] == 0);
             System.out.println();
         }
 

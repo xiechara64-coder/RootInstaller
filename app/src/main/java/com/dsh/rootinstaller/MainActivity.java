@@ -329,6 +329,8 @@ public class MainActivity extends ListActivity {
             long tParse = System.currentTimeMillis();
             long slowest = 0;
             String slowestPath = null;
+            // 记下本次扫描实际用到的缓存键：扫描结束后用它判断哪些缓存已成孤儿
+            final java.util.Set<String> seenCacheKeys = new java.util.HashSet<String>();
             for (int i = 0; i < uniq.size(); i++) {
                 if (cancelled) {
                     return;
@@ -343,6 +345,10 @@ public class MainActivity extends ListActivity {
                         slowestPath = p;
                     }
                     found.add(c);
+                    try {
+                        seenCacheKeys.add(ParseCache.keyFor(p));
+                    } catch (Throwable ignored) {
+                    }
                 } catch (Throwable t) {
                     Log.e("解析失败: " + p, t);
                 }
@@ -355,6 +361,10 @@ public class MainActivity extends ListActivity {
             // 不放在每个包的解析里：那样每存一个图标都要列一遍目录，反而更慢。
             ParseCache.trim(MainActivity.this);
             ParseCache.logScanSummary();
+            // 清掉「对应 APK 已经不在、且超过宽限期」的孤儿缓存。
+            // 不能只看「这次没扫到就删」：SD 卡没插时卡上所有包都会消失，
+            // 那样会把好缓存全清掉 —— 宽限期就是为了扛住这种情况。
+            ParseCache.sweep(MainActivity.this, seenCacheKeys, System.currentTimeMillis());
             // 缓存是否真的落地了？只靠命中数看不出来（命中 0 可能是「没写过」，
             // 也可能是「写了但读不到」），把目录和占用一起打出来。
             Log.i("缓存占用：解析 " + ParseCache.stats(MainActivity.this).describe()

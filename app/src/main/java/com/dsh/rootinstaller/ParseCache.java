@@ -315,6 +315,57 @@ public final class ParseCache {
         card.icon = decodePng(d.iconPng);
     }
 
+    /**
+     * 一次扫描结束后调用：清掉「对应 APK 已经不在、且超过宽限期」的孤儿缓存。
+     *
+     * @param seenKeys 本次扫描实际用到的缓存键（{@link #keyFor} 的结果）
+     * @param now      当前时间
+     */
+    public static void sweep(Context ctx, java.util.Set<String> seenKeys, long now) {
+        File d = dir(ctx);
+        if (d == null) {
+            return;
+        }
+        try {
+            File[] all = d.listFiles();
+            if (all == null || all.length == 0) {
+                return;
+            }
+            List<File> files = new ArrayList<File>();
+            for (int i = 0; i < all.length; i++) {
+                if (all[i].isFile() && all[i].getName().endsWith(".bin")) {
+                    files.add(all[i]);
+                }
+            }
+            int n = files.size();
+            if (n == 0) {
+                return;
+            }
+            long[] lastUsed = new long[n];
+            String[] keys = new String[n];
+            for (int i = 0; i < n; i++) {
+                File f = files.get(i);
+                lastUsed[i] = f.lastModified();
+                String name = f.getName();
+                keys[i] = name.substring(0, name.length() - 4);
+            }
+            int[] del = CacheSweep.chooseOrphans(lastUsed, keys, seenKeys, now,
+                    CacheSweep.DEFAULT_GRACE_MILLIS);
+            if (del.length == 0) {
+                return;
+            }
+            long freed = 0;
+            for (int i = 0; i < del.length; i++) {
+                File f = files.get(del[i]);
+                freed += f.length();
+                f.delete();
+            }
+            Log.i("清理孤儿解析缓存 " + del.length + " 项，释放 " + formatBytes(freed));
+        } catch (Throwable t) {
+            Log.w("清理孤儿解析缓存失败: " + t);
+        }
+    }
+
     /** 人类可读的体积，设置页展示用。 */
     private static String formatBytes(long bytes) {
         if (bytes < 1024) {

@@ -154,7 +154,7 @@ if (-not $androidJar) {
                      "Perms.java", "PermSorter.java", "PermDiff.java", "PermAbilities.java",
                      "ApkSignatures.java", "SigCompat.java", "SdkChange.java", "ApiNames.java",
                      "ParseCacheData.java", "ParseCacheCodec.java", "ParseCache.java",
-                     "IconCacheKey.java", "IconCachePolicy.java")) {
+                     "IconCacheKey.java", "IconCachePolicy.java", "CacheSweep.java")) {
         $common += (Join-Path $SrcDir $s)
     }
     foreach ($name in $androidTests) {
