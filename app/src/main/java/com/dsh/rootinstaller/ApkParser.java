@@ -288,8 +288,21 @@ public final class ApkParser {
             } catch (Throwable t) {
                 Log.w("读取应用名称失败: " + t);
             }
-            // 图标：这是「列表里图标一片空白」的修复点
-            card.icon = loadIconBitmap(pm, ai);
+            // 图标：这是「列表里图标一片空白」的修复点。
+            //
+            // 先查磁盘缓存：解码图标是整个扫描里最重的一步（41.8 MB 的包单是这一步
+            // 就要 2.4 秒），缓存命中后就不再碰 AssetManager。
+            // 缓存键只用「打开文件就能拿到的元信息」（见 IconCacheKey），
+            // 所以换版本/换文件时自然失效，不会出现「新图标沿用旧图标名」的问题。
+            android.graphics.Bitmap icon = IconCache.load(ctx, sourcePath,
+                    card.packageName, card.versionCode);
+            if (icon == null) {
+                icon = loadIconBitmap(pm, ai);
+                if (icon != null) {
+                    IconCache.store(ctx, sourcePath, card.packageName, card.versionCode, icon);
+                }
+            }
+            card.icon = icon;
         }
 
         // minSdkVersion 没有公开 API，只能反射；4.3 上字段名就是 minSdkVersion

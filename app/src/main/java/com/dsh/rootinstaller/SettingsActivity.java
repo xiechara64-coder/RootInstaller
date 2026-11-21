@@ -135,6 +135,28 @@ public class SettingsActivity extends Activity {
         permSortEntry.addView(permSortValue);
         root.addView(permSortEntry);
 
+        // ---------- 缓存 ----------
+        //
+        // 图标缓存放 getCacheDir()，系统在存储不足时会自己清；这里给的手动入口是
+        // 「我怀疑图标显示不对」时的兜底 —— 缓存本来就可能过期，关键是让用户能一键清掉。
+        root.addView(sectionTitle("缓存"));
+
+        final TextView iconCacheValue = new TextView(this);
+        final LinearLayout iconCacheEntry = makeEntry("清除图标缓存", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                IconCache.clear(SettingsActivity.this);
+                iconCacheValue.setText(IconCache.stats(SettingsActivity.this).describe());
+                toast("图标缓存已清除");
+            }
+        });
+        iconCacheValue.setTextSize(12f);
+        iconCacheValue.setTextColor(0xFF757575);
+        iconCacheValue.setPadding(0, dp(4), 0, 0);
+        iconCacheValue.setText(IconCache.stats(this).describe());
+        iconCacheEntry.addView(iconCacheValue);
+        root.addView(iconCacheEntry);
+
         // ---------- 关于 ----------
         //
         // 固定放在最底部。这一段是纯展示信息（不是可改的设置），

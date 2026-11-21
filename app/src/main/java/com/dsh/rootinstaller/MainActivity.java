@@ -351,6 +351,11 @@ public class MainActivity extends ListActivity {
             Log.i("阶段计时: 解析 " + uniq.size() + " 个包 " + costParse
                     + "ms，最慢单包 " + slowest + "ms (" + slowestPath + ")");
 
+            // 一次扫描结束后统一淘汰一次图标缓存。
+            // 不放在每个包的解析里：那样每存一个图标都要列一遍目录，反而更慢。
+            IconCache.trim(MainActivity.this);
+            IconCache.logScanSummary();
+
             final long cost = System.currentTimeMillis() - t0;
             Log.i("扫描完成，找到 " + found.size() + " 个 APK，耗时 " + cost + "ms");
 

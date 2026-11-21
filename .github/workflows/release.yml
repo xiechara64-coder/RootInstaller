@@ -170,14 +170,33 @@ jobs:
           $tag = "${{ steps.meta.outputs.tag }}"
           $apk = "RootInstaller-$tag.apk"
 
+          # 更新说明：优先用仓库里的 docs/release-notes/<tag>.md（人工写的、面向用户），
+          # 没有则退回 --generate-notes（从提交信息自动生成）。
+          # 人工说明更适合发布：提交信息是给开发者看的，用户要看「这版多了什么」。
+          $notesFile = "docs/release-notes/$tag.md"
+          $hasNotes = Test-Path $notesFile
+          if ($hasNotes) {
+            Write-Host "使用更新说明：$notesFile"
+          } else {
+            Write-Host "没有 $notesFile，改用自动生成的变更记录"
+          }
+
           # 已存在就先删附件再补（支持同一个 tag 重跑）
           & gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Release $tag 已存在，改为上传/覆盖附件"
             & gh release upload $tag $apk --clobber
             if ($LASTEXITCODE -ne 0) { throw "gh release upload 失败" }
+            if ($hasNotes) {
+              & gh release edit $tag --notes-file $notesFile
+              if ($LASTEXITCODE -ne 0) { throw "gh release edit 失败" }
+            }
           } else {
-            & gh release create $tag $apk --title $tag --generate-notes
+            if ($hasNotes) {
+              & gh release create $tag $apk --title $tag --notes-file $notesFile
+            } else {
+              & gh release create $tag $apk --title $tag --generate-notes
+            }
             if ($LASTEXITCODE -ne 0) { throw "gh release create 失败" }
           }
           Write-Host "Done: https://github.com/${{ github.repository }}/releases/tag/$tag"
