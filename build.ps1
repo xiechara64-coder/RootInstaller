@@ -673,3 +673,9 @@ Write-Host "  adb install -r `"$finalApk`""
 Write-Host ""
 Write-Host "如果手机上的 adb 版本太老装不上，可以先把 apk 拷到 sdcard 再手动点装："
 Write-Host "  adb push `"$finalApk`" /sdcard/RootInstaller.apk"
+
+# 显式声明成功，别让 $LASTEXITCODE 里残留的东西冒充脚本的退出码。
+# 本脚本最后几步会调用 aapt / apksigner，其中有些探测性调用允许失败；
+# 不写这一行的话，外层（例如 CI 或构建包装脚本）可能把某个工具的退出码
+# 误当成整个构建的结果。
+exit 0

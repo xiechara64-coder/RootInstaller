@@ -456,3 +456,12 @@ $expected | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $OutDir "expected.j
 Write-Host ""
 Write-Host "样本已生成到 $OutDir" -ForegroundColor Green
 Write-Host "对照表写入 samples\expected.json" -ForegroundColor Green
+
+# 必须显式 exit 0。
+#
+# 原因：本脚本最后几次外部调用是 `apksigner verify`，而我们**故意**拿未签名 /
+# v2-only / 被改过的包去校验 —— 它们按设计就会返回非 0。那个退出码会留在
+# $LASTEXITCODE 里，而 PowerShell 脚本结束时如果不显式 exit，外层（CI 的 pwsh 步骤）
+# 会把它当成脚本自身的退出码，于是**样本明明全都生成好了，作业却判定失败**。
+# 本地一直没暴露，是因为样本文件早就存在、没人重跑过这个脚本。
+exit 0
