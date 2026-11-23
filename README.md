@@ -5,6 +5,8 @@
 [![最新版本](https://img.shields.io/github/v/release/xiechara64-coder/RootInstaller?display_name=tag)](https://github.com/xiechara64-coder/RootInstaller/releases)
 [![许可证](https://img.shields.io/github/license/xiechara64-coder/RootInstaller)](LICENSE)
 
+**简体中文** | [English](README.en.md)
+
 一个面向 **Android 4.3 (API 18)** 的 APK 安装程序。解决两个具体问题：
 
 1. **系统自带安装器信息太少** —— 它只列出「需要的权限」，不告诉你包名、版本、签名、
