@@ -294,6 +294,13 @@ public final class ParseCache {
         if (abisComputed && card.nativeAbis != null) {
             d.nativeAbis.addAll(card.nativeAbis);
         }
+        // 只读证书也存下来：分组要用，且避免每次扫描重读签名块
+        d.certSha1 = card.archiveSignerSha1;
+        d.certV1 = card.sigV1;
+        d.certV2 = card.sigV2;
+        d.certV3 = card.sigV3;
+        d.certV4 = card.sigV4;
+
         // 图标一起存进来（见 ParseCacheData.iconPng 的注释）
         d.iconPng = encodePng(card.icon);
         return d;
@@ -341,6 +348,15 @@ public final class ParseCache {
             card.nativeAbis.clear();
             card.nativeAbis.addAll(d.nativeAbis);
         }
+        // 只读证书：即便没做过完整签名解析，也能用它做「同签名分组」
+        if (card.archiveSignerSha1 == null && d.certSha1 != null) {
+            card.archiveSignerSha1 = d.certSha1;
+            card.sigV1 = d.certV1;
+            card.sigV2 = d.certV2;
+            card.sigV3 = d.certV3;
+            card.sigV4 = d.certV4;
+        }
+
         // 图标随解析结果一起回来，不再需要单独一次解码
         card.icon = decodePng(d.iconPng);
     }
@@ -393,6 +409,32 @@ public final class ParseCache {
             Log.i("清理孤儿解析缓存 " + del.length + " 项，释放 " + formatBytes(freed));
         } catch (Throwable t) {
             Log.w("清理孤儿解析缓存失败: " + t);
+        }
+    }
+
+    /**
+     * 把「只读证书」补进已存在的缓存条目（列表扫描补齐证书后调用）。
+     *
+     * <p>不新建条目：没有缓存说明这个包没被成功解析过，下次解析时自然会写。
+     */
+    public static void updateCertificate(Context ctx, String apkPath, String certSha1,
+                                         boolean v1, boolean v2, boolean v3, boolean v4) {
+        if (certSha1 == null) {
+            return;
+        }
+        try {
+            ParseCacheData d = load(ctx, apkPath);
+            if (d == null) {
+                return;
+            }
+            d.certSha1 = certSha1;
+            d.certV1 = v1;
+            d.certV2 = v2;
+            d.certV3 = v3;
+            d.certV4 = v4;
+            save(ctx, apkPath, d);
+        } catch (Throwable t) {
+            Log.w("更新缓存里的证书失败: " + t);
         }
     }
 

@@ -50,6 +50,14 @@ public class MainActivity extends ListActivity {
      */
     static ApkListAdapter sAdapter;
 
+    /**
+     * 最近一次扫描的结果，供详情页回答「还有哪些包和它同签名但包名不同」。
+     *
+     * <p>和 {@link #sAdapter} 一样是静态引用，同样在 onDestroy 里清空；
+     * 只在主界面存活期间有效，不跨进程、不落盘。
+     */
+    static List<ApkCard> sLastScan;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -679,13 +687,113 @@ public class MainActivity extends ListActivity {
                     apkSortModeShown = sortMode;
                     ApkSorter.sort(items, sortMode);
                     adapter.notifyDataSetChanged();
+                    sLastScan = items;
                     statusView.setText("设备：" + ApkParser.deviceSummary()
                             + "\n扫描到 " + found.size() + " 个安装包（耗时 "
                             + cost + "ms）"
                             + "\n排序：" + Settings.APK_SORT_NAMES[sortMode]);
                 }
             });
+
+            // 列表显示之后再补证书 + 算「同签名不同包名」——
+            // 这一步要读每个包的签名块，放在扫描主流程里会拖慢首屏。
+            startSignaturePass(found);
         }
+    }
+
+    /**
+     * 后台补齐每个包的签名者证书，然后算出「同签名但包名不同」的其它包。
+     *
+     * <p>为什么不放在解析里：解析路线是「列表要快」，而分组只是**提示**，
+     * 晚一两秒出现完全可以接受；放在主流程里会让每次扫描都变慢。
+     *
+     * <p>代价只在第一次扫描时付：证书读出来后会随解析缓存一起落盘
+     * （{@code signaturePresent}），下次扫描就有了。
+     */
+    private void startSignaturePass(final List<ApkCard> cards) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                long t0 = System.currentTimeMillis();
+                int computed = 0;
+                for (int i = 0; i < cards.size(); i++) {
+                    if (scanTask == null || scanTask.cancelled) {
+                        return;
+                    }
+                    ApkCard c = cards.get(i);
+                    if (c.archiveSignerSha1 != null) {
+                        continue;
+                    }
+                    try {
+                        ApkSignatures.Result r = ApkSignatures.inspectCertificate(c.filePath);
+                        c.archiveSignerSha1 = r.certSha1;
+                        c.sigV1 = r.v1;
+                        c.sigV2 = r.v2;
+                        c.sigV3 = r.v3;
+                        c.sigV4 = r.v4;
+                        // 存进解析缓存：下次扫描就不用再读签名块了
+                        ParseCache.updateCertificate(MainActivity.this, c.filePath,
+                                r.certSha1, r.v1, r.v2, r.v3, r.v4);
+                        computed++;
+                    } catch (Throwable t) {
+                        Log.w("读取签名证书失败: " + c.filePath + " -> " + t);
+                    }
+                    if (computed > 0 && (computed % 8) == 0) {
+                        notifyListLater();
+                    }
+                }
+                Log.i("证书补齐: " + computed + " 个，耗时 " + (System.currentTimeMillis() - t0) + "ms");
+                applySameSigGroups(cards);
+                notifyListLater();
+            }
+        }, "sig-pass").start();
+    }
+
+    /** 算「同签名不同包名」并写回每张卡片。 */
+    private void applySameSigGroups(List<ApkCard> cards) {
+        final List<String> pkgs = new ArrayList<String>();
+        final List<String> certs = new ArrayList<String>();
+        final List<String> labels = new ArrayList<String>();
+        for (int i = 0; i < cards.size(); i++) {
+            pkgs.add(cards.get(i).packageName);
+            certs.add(cards.get(i).archiveSignerSha1);
+            labels.add(cards.get(i).label);
+        }
+        java.util.Map<String, SameSigGroups.Info> map = SameSigGroups.compute(pkgs, certs, labels);
+        int groups = 0;
+        StringBuilder sample = new StringBuilder();
+        for (int i = 0; i < cards.size(); i++) {
+            ApkCard c = cards.get(i);
+            SameSigGroups.Info info = c.packageName == null ? null : map.get(c.packageName);
+            if (info == null) {
+                c.sameSigCount = 0;
+                c.sameSigSummary = null;
+            } else {
+                c.sameSigCount = info.count;
+                c.sameSigSummary = info.summary;
+                groups++;
+                if (groups <= 5) {
+                    if (sample.length() > 0) {
+                        sample.append("；");
+                    }
+                    sample.append(c.packageName).append(" → ").append(info.summary);
+                }
+            }
+        }
+        Log.i("同签名分组: " + groups + " 个包存在「同签名不同包名」的其它包"
+                + (sample.length() > 0 ? "： " + sample : ""));
+    }
+
+    /** 从后台线程安全地刷新列表。 */
+    private void notifyListLater() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (adapter != null) {
+                    adapter.notifyDataSetChanged();
+                }
+            }
+        });
     }
 
     @Override
@@ -693,6 +801,9 @@ public class MainActivity extends ListActivity {
         hideBusy();
         if (sAdapter == adapter) {
             sAdapter = null;
+        }
+        if (sLastScan == items) {
+            sLastScan = null;
         }
         if (scanTask != null) {
             scanTask.cancelled = true;

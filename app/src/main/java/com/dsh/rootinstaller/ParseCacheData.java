@@ -66,5 +66,17 @@ public final class ParseCacheData {
      * 「图标明明写了却每次都要重新解码」——实测踩过这个坑（热扫卡在 17 秒）。
      * 一个 APK 一个文件、读一次什么都拿到，这类问题从根上没有了。
      */
+    /**
+     * 只读证书（不校验完整性）的结果：供「同签名不同包名」分组用。
+     *
+     * <p>和 {@link #signaturePresent} 是两件事：那个表示"完整签名信息都算过了"，
+     * 这个只表示"知道是谁签的"。列表扫描补的就是这一层，免得每次扫描重读签名块。
+     */
+    public String certSha1;
+    public boolean certV1;
+    public boolean certV2;
+    public boolean certV3;
+    public boolean certV4;
+
     public byte[] iconPng;
 }

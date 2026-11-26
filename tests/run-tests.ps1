@@ -98,6 +98,7 @@ $pureTests = @(
     @{ Name = "SdkChangeCheck";      Sources = @("SdkChange.java", "ApiNames.java"); Arg = "" }
     @{ Name = "IconCacheCheck";      Sources = @("IconCacheKey.java", "IconCachePolicy.java"); Arg = "" }
     @{ Name = "ApkDeleteCheck";      Sources = @("DeletablePaths.java", "Selection.java"); Arg = "" }
+    @{ Name = "SameSigGroupsCheck";  Sources = @("SameSigGroups.java"); Arg = "" }
 )
 foreach ($t in $pureTests) {
     $sources = @()

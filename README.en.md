@@ -71,6 +71,7 @@ The toolchain is `aapt` + `javac` + `d8` + `zipalign` + `apksigner` — **no Gra
 - [Signature detection](#signature-detection)
 - [Settings](#settings)
 - [Managing APKs: deleting packages](#managing-apks-deleting-packages)
+- [Same signature, different package name](#same-signature-different-package-name)
 - [Version compatibility](#version-compatibility)
 - [Roadmap](#roadmap)
 - [License](#license)
@@ -89,6 +90,7 @@ When you open an APK, this app parses and displays:
 | **Signature comparison** | Signer certificate SHA-1, **signature schemes (v1/v2/v3/v4)**, **integrity check**, and whether it matches the installed version — so you learn *before* installing that it will fail. All computed automatically when the details page opens; nothing is hidden behind a "compute" button |
 | **System requirement changes** | On overwrite installs, flags whether **minSdk / targetSdk changed**. A raised minSdk means older devices can no longer install that update — and nothing warns you about it |
 | **Signature status** | Four distinct states: unsigned / **v2-v3 only without v1** (a perfectly valid package that pre-7.0 systems refuse — this 4.3 device blocks it) / **v1 only with targetSdk ≥ 30** (installable here, rejected by Android 11+ with `NO_SIGNATURE`) / **v1 + v2/v3** (normal) |
+| **Same-signature hint** | Other packages with the same signature and label but a **different package name** (typically an author rename). Overwrite installs need both the name and the signature, so these coexist — the app tells you "you think you are upgrading, but you will end up with a second copy" |
 | **Permissions** | Human-readable meaning of every permission plus protection level (dangerous / normal / signature); dangerous ones first, in red |
 | **Components** | Activity / Service / Receiver / Provider counts, and the list of **exported components** — entry points other apps can call |
 | **Checksums** | MD5 and SHA-1, computed on demand so first paint stays fast |
@@ -501,6 +503,52 @@ A refusal always comes with a plain-language reason — it never silently skips.
 - Nothing is preselected: a long-press selects only that row, so "enter selection mode" never means "all selected";
 - Only the **APK file** is deleted; the installed app is untouched (use "Uninstall" on the details page for that).
 
+## Same signature, different package name
+
+An overwrite install requires **the same package name *and* the same signature**. So two packages
+sharing a signature but not a package name can never overwrite each other — the system keeps both.
+
+The app surfaces this in two places:
+
+- **List**: a `· 同签名×1` badge at the end of the status line (literally "same signature ×1");
+- **Details**: a section listing the other package names and what it means.
+
+<img src="docs/screenshots/same-signature.png" width="260" alt="Two Minecraft entries with different package names, each marked as sharing a signature">
+
+(The screenshot is the real case from this device: `com.mojang.minecraftpe1532` 1.5.3.0 and
+`com.mojang.minecraftpe` 1.2.0.81, both installed, both called Minecraft — the "author renamed the
+package, so you end up with two copies" scenario.)
+
+### Why the rule is "signature **and** label", not just signature
+
+The first version compared signatures only. On this device it flagged **140 of 151 packages**,
+because vendor system apps all share the platform key. 140 warnings is the same as no warning —
+the real renamed-package case gets buried.
+
+Adding a second condition — **the same app label** (trimmed, inner whitespace collapsed,
+case-insensitive) — brought it from 140 down to **2**, exactly the pair worth warning about.
+
+No "group by signature" view: that needs a different list structure, while the warning only needs
+a second look — one line is enough.
+
+### Cost: paid once
+
+Signatures are **not** read during the list scan (that would slow first paint). A background pass
+fills them in after the list is shown:
+
+| | First time (nothing cached) | Afterwards |
+|---|---|---|
+| Certificate pass | **59 s for 151 packages** | **0 packages / 1 ms** |
+| Source | reading each APK's signing block | the parse cache (`certSha1`) |
+
+Results are written back into the parse cache, so only the first run pays. It runs on a background
+thread and never blocks the list.
+
+> Implementation detail: grouping only needs *who signed it*, not *whether the contents were
+> tampered with*. The pass therefore uses `ApkSignatures.inspectCertificate()` — no v1 digest-chain
+> verification — while the details page keeps using the full check.
+
+---
 ## Performance: how scanning got fast
 
 Three rounds of measurement, each correcting a wrong assumption.
@@ -635,11 +683,7 @@ repeat.
    and invalidated via `PACKAGE_ADDED / PACKAGE_REMOVED / PACKAGE_REPLACED` broadcasts.
    The hard part is invalidation: miss one event and the UI shows "not installed" incorrectly —
    worse than being slow. Either do it properly or not at all; currently: not.
-2. **Warn about "same signature, different package name".** Overwrite installation requires the
-   *same package name* **and** the same signature, so same-signature/different-package packages
-   can never overwrite each other. What's worth warning about is "the author renamed the
-   package, you think you're upgrading but you end up with a second copy". One extra line on the
-   details page; no grouping view.
+2. ~~Warn about "same signature, different package name"~~ — **done in v1.2.0** (see above).
 3. **Batch install** — deferred. The multi-select mode (long-press, select all/invert, bottom action
    bar) **already exists for deletion**, so batch install only needs wiring it to `pm install` — much
    cheaper than before. The demand itself is still unclear: on 4.3 devices one-at-a-time is the norm.

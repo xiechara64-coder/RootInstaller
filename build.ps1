@@ -406,8 +406,10 @@ $code = Invoke-Tool -Exe $javacExe -Arguments @(
     # 在内存/页面文件紧张的机器上会直接起不来：
     #     Native memory allocation (mmap) failed to map ... G1 virtual space
     #     error=1455 (页面文件太小)
-    # 这个工程只有 31 个源文件，512 MB 完全够用。
-    "-J-Xmx512m",
+    #     Native memory allocation (malloc) failed to allocate ... Chunk::new
+    # 这个工程只有一百多个类，320 MB 足够；给太大反而会在「可用内存只剩几百 MB」
+    # 的机器上直接失败（实测 512 MB 时失败、320 MB 能过）。
+    "-J-Xmx320m",
     "-encoding", "UTF-8",
     "-source", $javaTarget, "-target", $javaTarget,
     "-bootclasspath", $androidJar,

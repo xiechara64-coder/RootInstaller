@@ -165,11 +165,11 @@ public class ApkListAdapter extends BaseAdapter {
         // 徽标显示条件：中/高风险，或者「有敏感权限但相对安全」（显示绿色）。
         // 后一种情况值得给个绿色 —— 用户看到「它有定位和存储权限，
         // 但没有任何杀手级能力」这种明确结论，比什么都不显示更有信息量。
+        android.text.SpannableStringBuilder line =
+                new android.text.SpannableStringBuilder(status);
         if (c.riskBadge != null && c.riskBadge.length() > 0) {
-            String badge = "   ·   " + c.riskBadge;
-            android.text.SpannableString line =
-                    new android.text.SpannableString(status + badge);
-            int start = status.length();
+            int start = line.length();
+            line.append("   ·   ").append(c.riskBadge);
             line.setSpan(new android.text.style.ForegroundColorSpan(riskBadgeColor(c)),
                     start, line.length(),
                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -178,10 +178,19 @@ public class ApkListAdapter extends BaseAdapter {
                             android.graphics.Typeface.BOLD),
                     start, line.length(),
                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            h.status.setText(line);
-        } else {
-            h.status.setText(status);
         }
+        // 「同签名×N」：这个包和另外 N 个包同一个签名、但包名不同。
+        // 两者**不能互相覆盖**，系统会当成两个应用共存 —— 换包名的应用最容易踩。
+        if (c.sameSigCount > 0) {
+            Log.i("同签名徽标: " + c.packageName + " ×" + c.sameSigCount
+                    + "（" + c.sameSigSummary + "）");
+            int start = line.length();
+            line.append("   ·   同签名×").append(String.valueOf(c.sameSigCount));
+            line.setSpan(new android.text.style.ForegroundColorSpan(0xFF6D4C41),
+                    start, line.length(),
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        h.status.setText(line);
 
         // 图标：
         //   1. 已解析出位图的（进过详情页的包）直接用；

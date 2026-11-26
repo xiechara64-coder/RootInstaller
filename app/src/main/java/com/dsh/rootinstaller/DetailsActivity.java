@@ -143,6 +143,7 @@ public class DetailsActivity extends Activity {
             permSortModeShown = now;
             // 复用已经解析好的 card，只重建列表；权限表也已经在 Perms 里缓存了
             render(card, Perms.load(this));
+            appendSameSigInfo(card);
             appendFileAction(card);
         }
     }
@@ -226,11 +227,49 @@ public class DetailsActivity extends Activity {
                     public void run() {
                         card = c;
                         render(c, permTable);
+                        appendSameSigInfo(c);
                         appendFileAction(c);
                     }
                 });
             }
         }, "apk-parse").start();
+    }
+
+    /**
+     * 追加「同签名但包名不同」的提示。
+     *
+     * <p>数据来自主界面的最近一次扫描结果（{@code MainActivity.sLastScan}）：
+     * 列表扫描时已经补齐了每个包的证书，这里只是重新分一次组，不做新的 IO。
+     * 主界面不在（例如被系统回收）就静默跳过 —— 这是提示，不是必需信息。
+     */
+    private void appendSameSigInfo(ApkCard c) {
+        List<ApkCard> scan = MainActivity.sLastScan;
+        if (scan == null || c == null || c.packageName == null || scan.isEmpty()) {
+            return;
+        }
+        List<String> pkgs = new ArrayList<String>();
+        List<String> certs = new ArrayList<String>();
+        List<String> labels = new ArrayList<String>();
+        for (int i = 0; i < scan.size(); i++) {
+            ApkCard o = scan.get(i);
+            pkgs.add(o.packageName);
+            certs.add(o.archiveSignerSha1);
+            labels.add(o.label);
+        }
+        Map<String, SameSigGroups.Info> map = SameSigGroups.compute(pkgs, certs, labels);
+        SameSigGroups.Info info = map.get(c.packageName);
+        if (info == null) {
+            return;
+        }
+        adapter.add(InfoAdapter.Item.spacer());
+        adapter.add(InfoAdapter.Item.header("同签名但包名不同的安装包（" + info.count + "）"));
+        adapter.add(InfoAdapter.Item.field("包名", info.summary));
+        adapter.add(InfoAdapter.Item.field("这意味着什么",
+                "覆盖安装要求「包名相同且签名相同」，所以这些包和当前这个不能互相覆盖，"
+                        + "会作为独立应用共存。如果作者改过包名，你以为在升级，"
+                        + "装完却会多出一份，数据也不会自动迁过去。",
+                0xFF6D4C41));
+        adapter.commit();
     }
 
     /**

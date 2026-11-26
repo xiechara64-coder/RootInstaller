@@ -199,6 +199,34 @@ public final class ApkSignatures {
         return r;
     }
 
+    /**
+     * 只读「签名者证书」和「签名方案」，**不做完整性校验**（给「同签名分组」用）。
+     *
+     * <p>为什么不直接复用 {@link #inspect}：那条路会跑 v1 的摘要链核对
+     * （要读 MANIFEST.MF、逐条比对），对扫描列表里每个包都做一遍代价太高；
+     * 而分组只需要「这个包是谁签的」，不需要「包里内容有没有被改过」。
+     */
+    public static Result inspectCertificate(String apkPath) {
+        Result r = new Result();
+        r.path = apkPath;
+        if (apkPath == null) {
+            r.note = "路径为空";
+            return r;
+        }
+        File f = new File(apkPath);
+        if (!f.isFile()) {
+            r.note = "文件不存在";
+            return r;
+        }
+        readV1(f, r);
+        readSigningBlock(f, r);
+        r.v4 = new File(apkPath + ".idsig").isFile();
+        if (!r.anyScheme() && r.note == null) {
+            r.note = "未找到任何签名";
+        }
+        return r;
+    }
+
     // ------------------------------------------------------------------
     // v1：META-INF 里的证书
     // ------------------------------------------------------------------

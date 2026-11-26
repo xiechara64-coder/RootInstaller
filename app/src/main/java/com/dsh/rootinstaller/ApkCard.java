@@ -120,6 +120,17 @@ public class ApkCard {
     /** MANIFEST.MF 里记录的版本号，用于发现「改了包没重签名」。 */
     public String manifestVersionCode;
 
+    /**
+     * 同签名但**包名不同**的其它安装包数量（0 表示没有）。
+     *
+     * <p>覆盖安装要求「包名相同且签名相同」，所以这些包和当前这个**不能互相覆盖**。
+     * 值得提醒的场景是「同一应用被作者改了包名」——用户以为在升级，结果装出第二份。
+     */
+    public int sameSigCount;
+
+    /** 同签名其它包的包名清单（展示用，例如「com.a、com.b」）。 */
+    public String sameSigSummary;
+
     // ---- 解析状态 ----
     public boolean parseOk;
     public String parseError;

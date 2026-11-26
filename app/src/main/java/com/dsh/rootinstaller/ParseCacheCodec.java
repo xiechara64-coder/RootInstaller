@@ -32,7 +32,7 @@ public final class ParseCacheCodec {
     public static final int MAGIC = 0x44534850;
 
     /** 格式版本。字段有任何增删改都要 +1，旧缓存会被自动忽略并覆盖。 */
-    public static final int VERSION = 2;
+    public static final int VERSION = 3;
 
     private ParseCacheCodec() {
     }
@@ -86,6 +86,13 @@ public final class ParseCacheCodec {
 
             out.writeBoolean(d.nativeAbisPresent);
             writeList(out, d.nativeAbis);
+
+            // 只读证书（供同签名分组用）
+            writeStr(out, d.certSha1);
+            out.writeBoolean(d.certV1);
+            out.writeBoolean(d.certV2);
+            out.writeBoolean(d.certV3);
+            out.writeBoolean(d.certV4);
 
             // 图标：长度 -1 表示「没有图标」，和「空数组」区分开
             if (d.iconPng == null) {
@@ -161,6 +168,12 @@ public final class ParseCacheCodec {
 
             d.nativeAbisPresent = in.readBoolean();
             readList(in, d.nativeAbis);
+
+            d.certSha1 = readStr(in);
+            d.certV1 = in.readBoolean();
+            d.certV2 = in.readBoolean();
+            d.certV3 = in.readBoolean();
+            d.certV4 = in.readBoolean();
 
             int iconLen = in.readInt();
             if (iconLen >= 0) {
