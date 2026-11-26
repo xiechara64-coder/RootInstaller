@@ -437,6 +437,72 @@ Short version; the [Chinese README](README.md#排错) has the full logs.
 
 ## Managing APKs: deleting packages
 
+This app is an installer when something calls it, and an APK manager when you open it directly —
+the list already shows size, permission risk and install state, so it may as well let you clean up.
+
+### Two entry points
+
+| Where | How | Good for |
+|---|---|---|
+| **Details page** | Scroll to the bottom → "File actions" → "Delete this package" | One at a time, after reviewing what the package is |
+| **List selection** | Long-press any row → tick more rows → "Delete" in the bottom bar | Bulk cleanup, e.g. sort by size and drop the big ones |
+
+Selection mode adds a bottom bar: **"3 selected · 352.6 KB"** plus `Select all / Invert / Delete / Cancel`.
+The size total is there because that is the single number worth confirming before deleting.
+
+<img src="docs/screenshots/selection.png" width="260" alt="List in selection mode: three items selected, bottom bar showing total size and actions">
+
+Selected rows get a filled dot on the left (hollow when unselected) and a light blue background.
+The dot is drawn as a `shape` oval, not a "✓" glyph: on this 4.3 ROM some symbols exist in the
+view tree but never render on screen.
+
+### What may and may not be deleted
+
+Every deletion is checked against `DeletablePaths` first. These are refused outright:
+
+| Path | Why |
+|---|---|
+| `/system/`, `/vendor/`, `/cust/`, `/firmware/` | System partitions — breakage or a reflash |
+| `/data/app/`, `/data/app-lib/`, `/data/priv-app/` | Installed apps' own files; `pm uninstall` is the correct tool |
+| Anything containing `/asec` | Encrypted container mounts (this device has `/storage/sdcard1/asec_apks/*`); deleting can break installed apps |
+
+In other words: **only packages you put there yourself** (`/sdcard`, `/storage/sdcard1`, …).
+A refusal always comes with a plain-language reason — it never silently skips.
+
+### How a deletion is carried out
+
+1. `File.delete()` first (the app holds `WRITE_EXTERNAL_STORAGE`; there are no runtime permissions on 4.3);
+2. on failure (read-only SD card, permissions) and root is available → fall back to `su rm -f 'path'` via `RootShell.quote`;
+3. if both fail → say so honestly ("the card may be read-only"); never pretend it worked;
+4. on success → **immediately** drop that parse-cache entry and send a media-scanner broadcast,
+   otherwise the file manager keeps showing the file you just deleted.
+
+> **Why the cache is dropped immediately**: the orphan sweep waits 7 days (that grace period exists
+> for unmounted SD cards), but a user-initiated delete is a known event with a known path — no reason
+> to wait.
+>
+> One trap worth recording: the cache key contains the **file size and mtime**. After the file is gone
+> those are 0, so computing the key *after* deleting produces a different key and removes nothing —
+> observed as "deleted 3 packages, cache entry count unchanged". The key is therefore captured
+> **before** the delete.
+
+### After a deletion
+
+- The row is removed in place and the adapter refreshed — **no rescan** (a warm scan still takes ~14 s;
+  making the user wait that for one delete is silly);
+- Returning from the details page after a delete prunes missing files in `onResume`, so the list never
+  keeps a dead row that opens to "this package is gone" (same for files deleted in a file manager);
+- Bulk deletion reports a summary: `Deleted 3, freed 352.6 KB`; failures get their own dialog with reasons.
+
+### Safety boundaries
+
+- Deletion is irreversible, so both entry points confirm first — count, total size, "cannot be undone";
+- The bulk dialog lists the first six file names, not just a number;
+- Nothing is preselected: a long-press selects only that row, so "enter selection mode" never means "all selected";
+- Only the **APK file** is deleted; the installed app is untouched (use "Uninstall" on the details page for that).
+
+## Performance: how scanning got fast
+
 Three rounds of measurement, each correcting a wrong assumption.
 
 ### Round 1 — remove a useless copy (7–18 s → ~6.3 s)
