@@ -70,6 +70,7 @@ The toolchain is `aapt` + `javac` + `d8` + `zipalign` + `apksigner` — **no Gra
 - [Permission risk summary](#permission-risk-summary)
 - [Signature detection](#signature-detection)
 - [Settings](#settings)
+- [Managing APKs: deleting packages](#managing-apks-deleting-packages)
 - [Version compatibility](#version-compatibility)
 - [Roadmap](#roadmap)
 - [License](#license)
@@ -91,7 +92,7 @@ When you open an APK, this app parses and displays:
 | **Permissions** | Human-readable meaning of every permission plus protection level (dangerous / normal / signature); dangerous ones first, in red |
 | **Components** | Activity / Service / Receiver / Provider counts, and the list of **exported components** — entry points other apps can call |
 | **Checksums** | MD5 and SHA-1, computed on demand so first paint stays fast |
-| **Actions** | One-tap root uninstall of the installed version, and an "allow downgrade" switch |
+| **Actions** | One-tap root uninstall of the installed version, an "allow downgrade" switch, and **deleting the APK file** (single, or long-press to select several — see [Managing APKs](#managing-apks-deleting-packages)) |
 
 Side by side:
 
@@ -411,7 +412,7 @@ Real, unavoidable limitations — not unfinished work:
 6. **`content://` URIs may not resolve to a path.** The app tries the `_data` column (usually
    works on 4.3) and otherwise asks you to pick the file manually.
 7. **Only `.apk` files can be installed.** `pm install` requires the extension.
-8. **No batch install.** One package at a time.
+8. **No batch install.** One package at a time (batch **deletion** is supported — see [Managing APKs](#managing-apks-deleting-packages)).
 9. **"Delete the APK after a successful install" really deletes it.** Returning to its details
    page afterwards shows "this package is gone" and the install button is disabled. That's
    expected, not a bug.
@@ -434,7 +435,7 @@ Short version; the [Chinese README](README.md#排错) has the full logs.
 
 ---
 
-## Performance: how scanning got fast
+## Managing APKs: deleting packages
 
 Three rounds of measurement, each correcting a wrong assumption.
 
@@ -573,8 +574,9 @@ repeat.
    can never overwrite each other. What's worth warning about is "the author renamed the
    package, you think you're upgrading but you end up with a second copy". One extra line on the
    details page; no grouping view.
-3. **Batch install** — deferred. Real demand is "install a dozen packages after a reflash", but
-   multi-select needs a new list mode, and on 4.3 devices one-at-a-time is the norm.
+3. **Batch install** — deferred. The multi-select mode (long-press, select all/invert, bottom action
+   bar) **already exists for deletion**, so batch install only needs wiring it to `pm install` — much
+   cheaper than before. The demand itself is still unclear: on 4.3 devices one-at-a-time is the norm.
 4. **Not doing: silent uninstall/freeze (`pm disable`).** Disabling a system or critical app on
    4.3 can break the launcher or prevent booting, recoverable only via a root shell. The benefit
    (power saving, hiding apps) is far smaller than the risk.

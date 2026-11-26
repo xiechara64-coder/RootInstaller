@@ -30,6 +30,17 @@ public class MainActivity extends ListActivity {
     private int apkSortModeShown = -1;
 
     /**
+     * 多选模式：长按列表项进入，底部出现操作条。
+     *
+     * <p>只在「主界面直接打开」时可用；被别的应用当安装器调起时走的是详情页，
+     * 不会到这里。
+     */
+    private boolean selecting;
+    private final Selection selection = new Selection();
+    private View selectBar;
+    private TextView selectInfo;
+
+    /**
      * 适配器的静态引用，供 DetailsActivity 回填解析出来的图标。
      *
      * 用静态引用是权衡后的选择：正常的做法是 startActivityForResult 回传，
@@ -99,26 +110,61 @@ public class MainActivity extends ListActivity {
                     return;
                 }
                 ApkCard c = (ApkCard) obj;
+                if (selecting) {
+                    toggleSelection(c);
+                    return;
+                }
                 CrashReporter.note("用户点击列表项: " + c.filePath);
                 Intent detail = new Intent(MainActivity.this, DetailsActivity.class);
                 detail.putExtra(DetailsActivity.EXTRA_APK, c.filePath);
                 startActivity(detail);
             }
         });
-        // 长按直接进入详情页也算一个入口，老设备上点击不灵时能救急
+        // 长按进入多选模式（Android 惯例）。
+        //
+        // 注意：以前长按是「进详情页」的救急入口。现在单击仍然进详情，
+        // 所以功能没有丢；多选模式下单击则是勾选/取消。
         getListView().setOnItemLongClickListener(new android.widget.AdapterView.OnItemLongClickListener() {
             @Override
             public boolean onItemLongClick(android.widget.AdapterView<?> parent,
                                            android.view.View view, int position, long id) {
-                Object obj = parent.getItemAtPosition(position);
-                if (!(obj instanceof ApkCard)) {
+                if (position < 0 || position >= items.size()) {
                     return false;
                 }
-                ApkCard c = (ApkCard) obj;
-                Intent detail = new Intent(MainActivity.this, DetailsActivity.class);
-                detail.putExtra(DetailsActivity.EXTRA_APK, c.filePath);
-                startActivity(detail);
+                enterSelection(position);
                 return true;
+            }
+        });
+
+        // 底部多选操作条
+        selectBar = findViewById(R.id.select_bar);
+        selectInfo = (TextView) findViewById(R.id.select_info);
+        findViewById(R.id.select_all).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                selection.selectAll(allPaths());
+                adapter.notifyDataSetChanged();
+                updateSelectBar();
+            }
+        });
+        findViewById(R.id.select_invert).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                selection.invert(allPaths());
+                adapter.notifyDataSetChanged();
+                updateSelectBar();
+            }
+        });
+        findViewById(R.id.select_delete).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                confirmDeleteSelected();
+            }
+        });
+        findViewById(R.id.select_cancel).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                exitSelection();
             }
         });
 
@@ -195,6 +241,11 @@ public class MainActivity extends ListActivity {
         //   这里只需要更新「已安装状态」这几个字段，代价很小。
         refreshInstalledState();
 
+        // 文件可能已经不在了：详情页里刚删过，或者用户在文件管理器里删的。
+        // 不剔掉的话，列表会留着一个点开就报「已经不在了」的死项 ——
+        // 而且它会跟着进入多选，删除时再报一次「文件已经不存在了」。
+        pruneMissingItems();
+
         // 用户可能刚从设置页改了排序方式，比对一下，变了就重排。
         // 同样不重新扫描 —— 只对现有列表重排，代价可以忽略。
         int mode = Settings.getApkSortMode(this);
@@ -255,9 +306,250 @@ public class MainActivity extends ListActivity {
     }
 
     /** 重新扫描（会弹出加载提示，并跳回列表顶部）。 */
+    // ------------------------------------------------------------------
+    // 多选与删除安装包
+    // ------------------------------------------------------------------
+
+    private void enterSelection(int position) {
+        ApkCard c = items.get(position);
+        selecting = true;
+        selection.clear();
+        selection.select(c.filePath);
+        adapter.setSelectionMode(true, selection);
+        selectBar.setVisibility(View.VISIBLE);
+        updateSelectBar();
+        CrashReporter.note("进入多选模式: " + c.filePath);
+    }
+
+    private void exitSelection() {
+        selecting = false;
+        selection.clear();
+        if (adapter != null) {
+            adapter.setSelectionMode(false, null);
+        }
+        if (selectBar != null) {
+            selectBar.setVisibility(View.GONE);
+        }
+    }
+
+    private void toggleSelection(ApkCard c) {
+        selection.toggle(c.filePath);
+        adapter.notifyDataSetChanged();
+        updateSelectBar();
+    }
+
+    /**
+     * 剔除列表里「文件已经不存在」的项。
+     *
+     * <p>触发场景：在详情页删了包再返回、或在文件管理器里删了文件再切回来。
+     * 只做 {@code exists()} 检查（159 次 stat，代价可忽略），不重新解析、不动滚动位置。
+     */
+    private void pruneMissingItems() {
+        if (items.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (int i = items.size() - 1; i >= 0; i--) {
+            String p = items.get(i).filePath;
+            if (p == null || !new java.io.File(p).exists()) {
+                items.remove(i);
+                changed = true;
+            }
+        }
+        if (!changed) {
+            return;
+        }
+        if (selecting) {
+            List<String> alive = new ArrayList<String>();
+            for (int i = 0; i < items.size(); i++) {
+                alive.add(items.get(i).filePath);
+            }
+            selection.retainOnly(alive);
+            updateSelectBar();
+        }
+        adapter.notifyDataSetChanged();
+        Log.i("列表里有 APK 已经不存在，已从列表移除");
+    }
+
+    private List<String> allPaths() {
+        List<String> out = new ArrayList<String>();
+        for (int i = 0; i < items.size(); i++) {
+            out.add(items.get(i).filePath);
+        }
+        return out;
+    }
+
+    private void updateSelectBar() {
+        if (selectInfo == null) {
+            return;
+        }
+        int n = selection.size();
+        long bytes = 0;
+        for (int i = 0; i < items.size(); i++) {
+            ApkCard c = items.get(i);
+            if (selection.isSelected(c.filePath)) {
+                bytes += c.fileSize;
+            }
+        }
+        selectInfo.setText("已选 " + n + " 项 · 共 " + ApkParser.humanSize(bytes));
+        View del = findViewById(R.id.select_delete);
+        if (del != null) {
+            del.setEnabled(n > 0);
+            del.setAlpha(n > 0 ? 1f : 0.4f);
+        }
+    }
+
+    private ApkCard findCard(String path) {
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).filePath != null && items.get(i).filePath.equals(path)) {
+                return items.get(i);
+            }
+        }
+        return null;
+    }
+
+    private void confirmDeleteSelected() {
+        // 先剔掉已经不存在的文件，否则确认框会列出「注定删不掉」的项
+        pruneMissingItems();
+        final List<String> selected = selection.selectedList();
+        if (selected.isEmpty()) {
+            toastMsg("还没有选中任何安装包");
+            return;
+        }
+        // 先把「不允许删」的分出来：确认框里就告诉用户，别等失败才说
+        final List<String> deletable = new ArrayList<String>();
+        final List<String> blocked = new ArrayList<String>();
+        long bytes = 0;
+        for (int i = 0; i < selected.size(); i++) {
+            String p = selected.get(i);
+            if (DeletablePaths.canDelete(p)) {
+                deletable.add(p);
+                ApkCard c = findCard(p);
+                if (c != null) {
+                    bytes += c.fileSize;
+                }
+            } else {
+                blocked.add(DeletablePaths.fileNameOf(p));
+            }
+        }
+        if (deletable.isEmpty()) {
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("没有可删除的文件")
+                    .setMessage("选中的 " + blocked.size()
+                            + " 个包位于系统目录或 asec 容器里，本应用不删除它们。")
+                    .setPositiveButton("知道了", null)
+                    .show();
+            return;
+        }
+
+        StringBuilder msg = new StringBuilder();
+        msg.append("合计 ").append(ApkParser.humanSize(bytes))
+                .append("，删除后无法恢复。\n\n");
+        int show = Math.min(deletable.size(), 6);
+        for (int i = 0; i < show; i++) {
+            msg.append("· ").append(DeletablePaths.fileNameOf(deletable.get(i))).append('\n');
+        }
+        if (deletable.size() > show) {
+            msg.append("· …还有 ").append(deletable.size() - show).append(" 个\n");
+        }
+        if (!blocked.isEmpty()) {
+            msg.append("\n其中 ").append(blocked.size()).append(" 个位于系统目录，将被跳过。");
+        }
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("删除 " + deletable.size() + " 个安装包？")
+                .setMessage(msg.toString())
+                .setPositiveButton("删除", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        performDelete(deletable);
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void performDelete(final List<String> paths) {
+        final java.util.Map<String, Long> sizes = new java.util.HashMap<String, Long>();
+        for (int i = 0; i < items.size(); i++) {
+            ApkCard c = items.get(i);
+            if (paths.contains(c.filePath)) {
+                sizes.put(c.filePath, c.fileSize);
+            }
+        }
+        statusView.setText("正在删除 " + paths.size() + " 个安装包…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final ApkDeleter.Batch batch =
+                        ApkDeleter.deleteAll(MainActivity.this, paths, sizes);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        // 文件确实没了的才从列表摘掉。
+                        // 这里**不重扫**：暖扫也要十几秒，删几个包却让用户等一轮扫描太蠢。
+                        java.util.HashSet<String> gone = new java.util.HashSet<String>();
+                        for (int i = 0; i < paths.size(); i++) {
+                            if (!new java.io.File(paths.get(i)).exists()) {
+                                gone.add(paths.get(i));
+                            }
+                        }
+                        for (int i = items.size() - 1; i >= 0; i--) {
+                            if (gone.contains(items.get(i).filePath)) {
+                                items.remove(i);
+                            }
+                        }
+                        exitSelection();
+                        adapter.notifyDataSetChanged();
+                        String msg = batch.summary();
+                        statusView.setText((batch.failures.isEmpty() ? "✓ " : "! ") + msg);
+                        toastMsg(msg);
+                        if (!batch.failures.isEmpty()) {
+                            showDeleteFailures(batch.failures);
+                        }
+                    }
+                });
+            }
+        }, "apk-delete").start();
+    }
+
+    private void showDeleteFailures(final List<String> failures) {
+        StringBuilder sb = new StringBuilder();
+        int limit = Math.min(failures.size(), 12);
+        for (int i = 0; i < limit; i++) {
+            sb.append("· ").append(failures.get(i)).append('\n');
+        }
+        if (failures.size() > limit) {
+            sb.append("…还有 ").append(failures.size() - limit).append(" 条\n");
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("有 " + failures.size() + " 个没删掉")
+                .setMessage(sb.toString())
+                .setPositiveButton("知道了", null)
+                .show();
+    }
+
+    private void toastMsg(String s) {
+        android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (selecting) {
+            // 多选模式下返回键先退出多选，而不是直接退出应用
+            exitSelection();
+            return;
+        }
+        super.onBackPressed();
+    }
+
     private void rescan() {
         if (scanTask != null) {
             scanTask.cancelled = true;
+        }
+        // 重新扫描会重建列表，之前的选择已经没有意义
+        if (selecting) {
+            exitSelection();
         }
         showBusy();
         scanTask = new ScanTask();
@@ -295,7 +587,6 @@ public class MainActivity extends ListActivity {
         public void run() {
             long t0 = System.currentTimeMillis();
             final List<ApkCard> found = new ArrayList<ApkCard>();
-
             // 候选扫描根目录。
             // 注意：这里先按「规范路径」去重，因为 Android 上 /sdcard、
             // /mnt/sdcard 都只是 /storage/sdcard0 的符号链接，

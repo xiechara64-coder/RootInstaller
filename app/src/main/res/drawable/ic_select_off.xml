@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「未选中」标记：空心圆。和 ic_select_on 配对使用，
+    两者只有填充色不同，用户在列表里一眼能看出选中了哪几项。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#00000000" />
+    <stroke
+        android:width="2dp"
+        android:color="#9E9E9E" />
+</shape>

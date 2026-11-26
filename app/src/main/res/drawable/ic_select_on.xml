@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「已选中」标记：实心圆。
+    不用「✓」字形 —— 这台 4.3 的 ROM 上有些符号（例如 ⋮）明明在视图树里却没有字形，
+    屏幕上画不出来。用 shape 画圆不依赖任何字体。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#1976D2" />
+    <stroke
+        android:width="2dp"
+        android:color="#0D47A1" />
+</shape>

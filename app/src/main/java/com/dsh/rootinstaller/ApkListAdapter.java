@@ -36,6 +36,21 @@ public class ApkListAdapter extends BaseAdapter {
     /** 从详情页带回来的图标缓存，供下一轮 getView 直接命中。 */
     private final Map<String, Bitmap> iconCache = new HashMap<String, Bitmap>();
 
+    /** 是否处于多选模式；以及选中的路径集合（由 MainActivity 持有，这里只读）。 */
+    private boolean selectionMode;
+    private Selection selection;
+
+    /** 进入/退出多选模式。由 MainActivity 在长按和取消时调用。 */
+    public void setSelectionMode(boolean on, Selection s) {
+        this.selectionMode = on;
+        this.selection = s;
+        notifyDataSetChanged();
+    }
+
+    public boolean isSelectionMode() {
+        return selectionMode;
+    }
+
     public ApkListAdapter(Context ctx, List<ApkCard> data) {
         this.ctx = ctx;
         this.data = data;
@@ -64,6 +79,7 @@ public class ApkListAdapter extends BaseAdapter {
         if (convertView == null) {
             convertView = inflater.inflate(R.layout.item_apk, parent, false);
             h = new ViewHolder();
+            h.check = (ImageView) convertView.findViewById(R.id.check);
             h.icon = (ImageView) convertView.findViewById(R.id.icon);
             h.name = (TextView) convertView.findViewById(R.id.name);
             h.info = (TextView) convertView.findViewById(R.id.info);
@@ -74,6 +90,17 @@ public class ApkListAdapter extends BaseAdapter {
         }
 
         ApkCard c = data.get(position);
+
+        // 多选模式的视觉：左侧圆点 + 行背景。
+        // 圆点是「实心=选中、空心=未选中」，不依赖任何字形（见 ic_select_on.xml）。
+        if (h.check != null) {
+            boolean checked = selectionMode && selection != null && selection.isSelected(c.filePath);
+            h.check.setVisibility(selectionMode ? View.VISIBLE : View.GONE);
+            if (selectionMode) {
+                h.check.setImageResource(checked ? R.drawable.ic_select_on : R.drawable.ic_select_off);
+            }
+            convertView.setBackgroundColor(checked ? 0xFFE3F2FD : 0xFFFFFFFF);
+        }
 
         // 在名称后面追加来源标记：SD 卡上的包用醒目的琥珀色标出来，
         // 内部存储的就不加（大多数情况是内部存储，加了反而满屏都是字）。
@@ -264,6 +291,7 @@ public class ApkListAdapter extends BaseAdapter {
     }
 
     private static class ViewHolder {
+        ImageView check;
         ImageView icon;
         TextView name;
         TextView info;

@@ -172,9 +172,39 @@ public final class ParseCache {
         }
     }
 
+    /**
+     * 立刻删掉某个 APK 的缓存条目。
+     *
+     * <p><b>必须在文件还在的时候调用</b>，或者改用 {@link #invalidateKey}：
+     * 缓存键里含文件大小与 mtime，文件一删这两个值就变成 0，
+     * 算出来的键和写缓存时的键对不上，会「删了个不存在的条目」。
+     * （这个坑实测踩过：删了 3 个包，缓存条目数一个都没减少。）
+     */
+    public static void invalidate(Context ctx, String apkPath) {
+        invalidateKey(ctx, keyFor(apkPath));
+    }
+
+    /** 按已经算好的键删缓存（删除文件前先取键，删完再用它清）。 */
+    public static void invalidateKey(Context ctx, String key) {
+        try {
+            if (key == null) {
+                return;
+            }
+            File d = dir(ctx);
+            if (d == null) {
+                return;
+            }
+            File f = new File(d, key + ".bin");
+            if (f.exists() && !f.delete()) {
+                Log.w("删除解析缓存条目失败: " + f.getName());
+            }
+        } catch (Throwable t) {
+            Log.w("删除解析缓存条目出错: " + t);
+        }
+    }
+
     /** 写缓存。失败只是没有缓存，不影响解析流程。 */
-    public static void save(Context ctx, String apkPath, ParseCacheData data) {
-        if (data == null || !data.parseOk) {
+    public static void save(Context ctx, String apkPath, ParseCacheData data) {        if (data == null || !data.parseOk) {
             // 解析失败的**不缓存**：失败可能是临时的（文件正被写、内存不足），
             // 缓存下来会让「下次就好了」永远好不了。
             return;

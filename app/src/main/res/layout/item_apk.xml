@@ -6,6 +6,19 @@
     android:padding="8dp"
     android:background="#FFFFFF">
 
+    <!--
+        「选中」标记：只在多选模式下显示（默认 GONE），
+        用实心/空心圆而不是「✓」字形 —— 见 ic_select_on.xml 的注释。
+    -->
+    <ImageView
+        android:id="@+id/check"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_gravity="center_vertical"
+        android:layout_marginRight="6dp"
+        android:visibility="gone"
+        android:contentDescription="选择" />
+
     <ImageView
         android:id="@+id/icon"
         android:layout_width="40dp"

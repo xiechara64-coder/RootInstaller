@@ -82,4 +82,76 @@
             android:textColor="#757575"
             android:text="@string/no_apk_found" />
     </FrameLayout>
+
+    <!--
+      多选模式的操作条：默认隐藏（GONE），长按列表项后出现在底部。
+
+      为什么放底部而不是 ActionBar：4.3 的 ActionBar 已经有「三个点」入口，
+      再塞四个动作会挤成一排小图标；底部横条还能顺便显示
+      「已选 N 项 · 共 X MB」，这正是删除前最需要确认的信息。
+    -->
+    <LinearLayout
+        android:id="@+id/select_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#263238"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/select_info"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingLeft="12dp"
+            android:paddingRight="6dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:textSize="12sp"
+            android:textColor="#ECEFF1"
+            android:text="已选 0 项" />
+
+        <TextView
+            android:id="@+id/select_all"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:textSize="13sp"
+            android:textColor="#90CAF9"
+            android:clickable="true"
+            android:text="全选" />
+
+        <TextView
+            android:id="@+id/select_invert"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:textSize="13sp"
+            android:textColor="#90CAF9"
+            android:clickable="true"
+            android:text="反选" />
+
+        <TextView
+            android:id="@+id/select_delete"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="#FF8A80"
+            android:clickable="true"
+            android:text="删除" />
+
+        <TextView
+            android:id="@+id/select_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:paddingRight="12dp"
+            android:textSize="13sp"
+            android:textColor="#B0BEC5"
+            android:clickable="true"
+            android:text="取消" />
+    </LinearLayout>
 </LinearLayout>

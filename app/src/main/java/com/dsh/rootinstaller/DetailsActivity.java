@@ -143,6 +143,7 @@ public class DetailsActivity extends Activity {
             permSortModeShown = now;
             // 复用已经解析好的 card，只重建列表；权限表也已经在 Perms 里缓存了
             render(card, Perms.load(this));
+            appendFileAction(card);
         }
     }
 
@@ -225,14 +226,92 @@ public class DetailsActivity extends Activity {
                     public void run() {
                         card = c;
                         render(c, permTable);
+                        appendFileAction(c);
                     }
                 });
             }
         }, "apk-parse").start();
     }
 
-    private void render(ApkCard c, Map<String, Perms.Info> permTable) {
-        // ---- 标题区 ----
+    /**
+     * 在详情列表末尾追加「文件操作」小节（删除这个安装包）。
+     *
+     * <p>为什么放在最后、而且单独一节：删除是不可逆操作，
+     * 不能和「安装」按钮或权限列表挤在一起，避免误触。
+     *
+     * <p>文件已经不在（比如勾了「安装成功后删除」）时不显示这一节。
+     */
+    private void appendFileAction(final ApkCard c) {
+        if (c == null || c.filePath == null) {
+            return;
+        }
+        File f = new File(c.filePath);
+        if (!f.exists()) {
+            return;
+        }
+        adapter.add(InfoAdapter.Item.spacer());
+        adapter.add(InfoAdapter.Item.header("文件操作"));
+        adapter.add(InfoAdapter.Item.action("删除这个安装包",
+                ApkParser.humanSize(c.fileSize) + " · 点击删除",
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        confirmDeleteApk(c);
+                    }
+                }));
+        adapter.commit();
+    }
+
+    private void confirmDeleteApk(final ApkCard c) {
+        String blocked = DeletablePaths.blockedReason(c.filePath);
+        if (blocked != null) {
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("不能删除")
+                    .setMessage(blocked + "。")
+                    .setPositiveButton("知道了", null)
+                    .show();
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("删除安装包？")
+                .setMessage(c.filePath + "\n\n大小 " + ApkParser.humanSize(c.fileSize)
+                        + "\n\n删除后无法恢复，系统里已安装的版本不受影响。")
+                .setPositiveButton("删除", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        performDeleteApk(c);
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void performDeleteApk(final ApkCard c) {
+        setStatus("正在删除安装包…", true);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final ApkDeleter.Result r = ApkDeleter.delete(DetailsActivity.this, c.filePath);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (r.ok) {
+                            // 走一遍 load()：文件没了，页面会切换到
+                            // 「这个安装包已经不在了」那个分支（比停在这里更清楚）
+                            pendingStatus = "✓ " + r.message;
+                            toast(r.message);
+                            load(c.filePath);
+                        } else {
+                            setStatus("✗ 删除失败：" + r.message);
+                            toast("删除失败：" + r.message);
+                        }
+                    }
+                });
+            }
+        }, "apk-delete").start();
+    }
+
+    private void render(ApkCard c, Map<String, Perms.Info> permTable) {        // ---- 标题区 ----
         titleView.setText(c.label != null && c.label.length() > 0 ? c.label : c.fileName);
         subtitleView.setText(c.fileName + "   " + ApkParser.humanSize(c.fileSize));
 
